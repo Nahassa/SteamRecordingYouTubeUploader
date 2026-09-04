@@ -1,4 +1,6 @@
 using SteamRecUtility.Core.Files;
+using SteamRecUtility.Core.Probing;
+using SteamRecUtility.Core.Thumbnails;
 using SteamRecUtility.Core.Timelines;
 using SteamRecUtility.Core.Youtube;
 using Xunit;
@@ -190,5 +192,40 @@ public class FileOrganizerTests
         string dir = Path.Combine(Path.GetTempPath(), "srec-fo-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         Assert.Equal(Path.Combine(dir, "clip.mp4"), FileOrganizer.UniqueDestination(dir, "clip.mp4"));
+    }
+}
+
+public class ThumbnailExtractorTests
+{
+    private static SourceMedia Media(int w, int h, string sar) => SourceMedia.Parse($$"""
+        {"format":{"duration":"9.304"},
+         "streams":[{"index":0,"codec_type":"video","codec_name":"hevc","width":{{w}},
+                     "height":{{h}},"sample_aspect_ratio":"{{sar}}","pix_fmt":"yuv420p"}]}
+        """, "C:/rec/a.mp4");
+
+    [Fact]
+    public void Preview_is_rendered_at_display_aspect_not_stored_size()
+    {
+        // A 1280x960 clip tagged SAR 4:3 must preview as 1706x960 - the stretched look.
+        (int w, int h) = ThumbnailExtractor.DisplayDimensions(Media(1280, 960, "4:3"));
+        Assert.Equal(1706, w);
+        Assert.Equal(960, h);
+    }
+
+    [Fact]
+    public void Square_pixel_clip_previews_at_its_stored_size()
+    {
+        (int w, int h) = ThumbnailExtractor.DisplayDimensions(Media(1920, 1080, "1:1"));
+        Assert.Equal(1920, w);
+        Assert.Equal(1080, h);
+    }
+
+    [Fact]
+    public void Preview_seeks_into_the_clip_rather_than_grabbing_the_first_frame()
+    {
+        IReadOnlyList<string> args = ThumbnailExtractor.BuildArguments(Media(1280, 960, "4:3"), 4.652, "/tmp/t.jpg");
+        int i = args.ToList().IndexOf("-ss");
+        Assert.True(i >= 0);
+        Assert.Equal("4.652", args[i + 1]);
     }
 }

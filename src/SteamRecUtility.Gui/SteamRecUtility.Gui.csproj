@@ -8,6 +8,8 @@
     <AssemblyName>SteamRecUtility</AssemblyName>
     <RootNamespace>SteamRecUtility.Gui</RootNamespace>
     <Product>SteamRec Utility</Product>
+    <!-- Lets the solution build (and therefore be checked) on non-Windows hosts. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SteamRecUtility.Core/SteamRecUtility.Core.csproj" />
