@@ -1,0 +1,49 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{08025841-636F-40B4-8F27-137A8033460D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteamRecUtility.Core", "src\SteamRecUtility.Core\SteamRecUtility.Core.csproj", "{CFAB7548-9353-493C-AF5B-A6887A69386C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteamRecUtility.Cli", "src\SteamRecUtility.Cli\SteamRecUtility.Cli.csproj", "{6B89AD02-6199-4679-97AA-781760611127}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E46FB41F-8687-49E9-8418-FA6AB7B05E85}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteamRecUtility.Core.Tests", "tests\SteamRecUtility.Core.Tests\SteamRecUtility.Core.Tests.csproj", "{440D7794-4077-4D3C-9D76-CAD574EAB605}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SteamRecUtility.Gui", "src/SteamRecUtility.Gui/SteamRecUtility.Gui.csproj", "{BD462403-555A-4BE1-8DEE-9C9919E20C9C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+		{BD462403-555A-4BE1-8DEE-9C9919E20C9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD462403-555A-4BE1-8DEE-9C9919E20C9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD462403-555A-4BE1-8DEE-9C9919E20C9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD462403-555A-4BE1-8DEE-9C9919E20C9C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CFAB7548-9353-493C-AF5B-A6887A69386C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFAB7548-9353-493C-AF5B-A6887A69386C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFAB7548-9353-493C-AF5B-A6887A69386C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFAB7548-9353-493C-AF5B-A6887A69386C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6B89AD02-6199-4679-97AA-781760611127}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6B89AD02-6199-4679-97AA-781760611127}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6B89AD02-6199-4679-97AA-781760611127}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6B89AD02-6199-4679-97AA-781760611127}.Release|Any CPU.Build.0 = Release|Any CPU
+		{440D7794-4077-4D3C-9D76-CAD574EAB605}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{440D7794-4077-4D3C-9D76-CAD574EAB605}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{440D7794-4077-4D3C-9D76-CAD574EAB605}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{440D7794-4077-4D3C-9D76-CAD574EAB605}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CFAB7548-9353-493C-AF5B-A6887A69386C} = {08025841-636F-40B4-8F27-137A8033460D}
+		{6B89AD02-6199-4679-97AA-781760611127} = {08025841-636F-40B4-8F27-137A8033460D}
+		{440D7794-4077-4D3C-9D76-CAD574EAB605} = {E46FB41F-8687-49E9-8418-FA6AB7B05E85}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,10 @@
+# Build artifacts and dependencies
+node_modules/
+dist/
+build/
+.next/
+out/
+target/
+vendor/
+.venv/
+__pycache__/

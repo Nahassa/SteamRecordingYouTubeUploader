@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SteamRecUtility</AssemblyName>
+    <RootNamespace>SteamRecUtility.Gui</RootNamespace>
+    <Product>SteamRec Utility</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SteamRecUtility.Core/SteamRecUtility.Core.csproj" />
+  </ItemGroup>
+</Project>

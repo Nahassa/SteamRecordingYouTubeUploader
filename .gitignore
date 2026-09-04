@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+settings.json
+youtube_credentials.json
+youtube_token.json

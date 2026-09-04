@@ -1,0 +1,81 @@
+name: Build SteamRec Utility
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  release:
+    types: [created, published]
+  workflow_dispatch:
+
+jobs:
+  # Core is net8.0 and has no UI dependency, so its tests run anywhere and run fast.
+  # Keeping this separate means a logic regression is reported without waiting on a
+  # Windows runner or a WinForms build.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore src/SteamRecUtility.Core tests/SteamRecUtility.Core.Tests
+      - run: dotnet test tests/SteamRecUtility.Core.Tests --configuration Release --logger "console;verbosity=normal"
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore SteamRecUtility.sln
+
+      - name: Build solution (includes the WinForms GUI)
+        run: dotnet build SteamRecUtility.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/SteamRecUtility.Core.Tests --configuration Release --no-build
+
+      - name: Get version
+        id: get_version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match 'refs/tags/v(.+)') { $version = $matches[1] }
+          else { $version = $env:GITHUB_SHA.Substring(0,7) }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GUI and CLI
+        run: |
+          dotnet publish src/SteamRecUtility.Gui -c Release -r win-x64 --self-contained true `
+            /p:PublishSingleFile=true /p:PublishReadyToRun=true -o build/
+          dotnet publish src/SteamRecUtility.Cli -c Release -r win-x64 --self-contained true `
+            /p:PublishSingleFile=true /p:PublishReadyToRun=true -o build/
+
+      - name: Name artifacts with version
+        shell: pwsh
+        run: |
+          $v = "${{ steps.get_version.outputs.VERSION }}"
+          Copy-Item build/SteamRecUtility.exe "build/SteamRecUtility-$v-win-x64.exe"
+          Copy-Item build/srec.exe "build/srec-$v-win-x64.exe"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SteamRecUtility-${{ steps.get_version.outputs.VERSION }}
+          path: |
+            build/SteamRecUtility-${{ steps.get_version.outputs.VERSION }}-win-x64.exe
+            build/srec-${{ steps.get_version.outputs.VERSION }}-win-x64.exe
+          retention-days: 30
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/SteamRecUtility-${{ steps.get_version.outputs.VERSION }}-win-x64.exe
+            build/srec-${{ steps.get_version.outputs.VERSION }}-win-x64.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
