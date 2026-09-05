@@ -118,7 +118,7 @@ public class RemuxServiceBehaviourTests
 
     private static string TempDir()
     {
-        string d = Path.Combine(Path.GetTempPath(), "srec-test-" + Guid.NewGuid().ToString("N"));
+        string d = Path.Combine(Path.GetTempPath(), "sclip-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(d);
         return d;
     }

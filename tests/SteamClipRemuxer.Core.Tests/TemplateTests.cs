@@ -143,7 +143,7 @@ public class TimelineFixerTests
     [Fact]
     public void Converts_an_entries_object_into_an_ordered_array()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "srec-tl-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "sclip-tl-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         string file = Path.Combine(dir, "t.json");
         File.WriteAllText(file, """{"entries":{"10":{"n":10},"2":{"n":2},"1":{"n":1}}}""");
@@ -161,7 +161,7 @@ public class TimelineFixerTests
     [Fact]
     public void Leaves_an_already_valid_file_untouched()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "srec-tl-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "sclip-tl-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         string file = Path.Combine(dir, "t.json");
         File.WriteAllText(file, """{"entries":[{"n":1}]}""");
@@ -176,7 +176,7 @@ public class FileOrganizerTests
     [Fact]
     public void Never_overwrites_an_existing_file_at_the_destination()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "srec-fo-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "sclip-fo-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "clip.mp4"), "original");
 
@@ -189,7 +189,7 @@ public class FileOrganizerTests
     [Fact]
     public void Uses_the_plain_name_when_the_destination_is_free()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "srec-fo-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "sclip-fo-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         Assert.Equal(Path.Combine(dir, "clip.mp4"), FileOrganizer.UniqueDestination(dir, "clip.mp4"));
     }

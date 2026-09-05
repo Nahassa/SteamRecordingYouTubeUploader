@@ -53,7 +53,7 @@ public static class Program
 
     private static int Unknown(string command)
     {
-        Console.Error.WriteLine($"Unknown command '{command}'. Try 'srec --help'.");
+        Console.Error.WriteLine($"Unknown command '{command}'. Try 'sclip --help'.");
         return 2;
     }
 
@@ -199,13 +199,13 @@ public static class Program
 
     private static void PrintUsage() => Console.WriteLine(
         """
-        srec - lossless remux and YouTube upload for Steam recordings
+        sclip - lossless remux and YouTube upload for Steam recordings
 
-          srec remux --in <dir> --out <dir> [--aspect 16:9] [--move-processed|--keep-originals]
-          srec run   --in <dir> --out <dir> --upload [--privacy unlisted]
-          srec upload --in <dir> [--privacy unlisted]
-          srec probe --in <file>
-          srec fix-timelines --in <dir>
+          sclip remux --in <dir> --out <dir> [--aspect 16:9] [--move-processed|--keep-originals]
+          sclip run   --in <dir> --out <dir> --upload [--privacy unlisted]
+          sclip upload --in <dir> [--privacy unlisted]
+          sclip probe --in <file>
+          sclip fix-timelines --in <dir>
 
         Options
           --in <path>          input folder, or file for 'probe'

@@ -64,7 +64,7 @@ public sealed class ThumbnailExtractor : IThumbnailExtractor
             ? Math.Clamp(media.DurationSeconds * atFraction, 0, Math.Max(0, media.DurationSeconds - 0.1))
             : 0;
 
-        string temp = Path.Combine(Path.GetTempPath(), $"srec-thumb-{Guid.NewGuid():N}.jpg");
+        string temp = Path.Combine(Path.GetTempPath(), $"sclip-thumb-{Guid.NewGuid():N}.jpg");
         try
         {
             ProcessResult result = await _runner

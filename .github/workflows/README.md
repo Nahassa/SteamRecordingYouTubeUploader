@@ -33,7 +33,7 @@ self-contained, single-file, ReadyToRun `win-x64` executables:
 | Project | Executable |
 |---|---|
 | `src/SteamClipRemuxer.Gui` | `SteamClipRemuxer-<version>-win-x64.exe` |
-| `src/SteamClipRemuxer.Cli` | `srec-<version>-win-x64.exe` |
+| `src/SteamClipRemuxer.Cli` | `sclip-<version>-win-x64.exe` |
 
 `<version>` comes from the tag on a `v*` tag build (`v1.0.0` → `1.0.0`), and
 from the first seven characters of the commit SHA otherwise.

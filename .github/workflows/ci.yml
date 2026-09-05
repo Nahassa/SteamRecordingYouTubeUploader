@@ -99,7 +99,7 @@ jobs:
           $v = '${{ steps.version.outputs.version }}'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item publish/gui/SteamClipRemuxer.exe "dist/SteamClipRemuxer-$v-win-x64.exe"
-          Copy-Item publish/cli/srec.exe "dist/srec-$v-win-x64.exe"
+          Copy-Item publish/cli/sclip.exe "dist/sclip-$v-win-x64.exe"
           Get-ChildItem dist | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v7
@@ -120,4 +120,4 @@ jobs:
           $v = '${{ steps.version.outputs.version }}'
           gh release upload '${{ github.event.release.tag_name }}' `
             "dist/SteamClipRemuxer-$v-win-x64.exe" `
-            "dist/srec-$v-win-x64.exe" --clobber
+            "dist/sclip-$v-win-x64.exe" --clobber
