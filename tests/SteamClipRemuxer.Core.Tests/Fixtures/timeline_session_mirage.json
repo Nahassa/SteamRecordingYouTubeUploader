@@ -1,0 +1,934 @@
+{
+	"daterecorded": "1788361852",
+	"starttime": "0",
+	"entries": [
+		{
+			"id": "136",
+			"time": "24450",
+			"type": "gamemode",
+			"mode": 3
+		}
+,
+		{
+			"id": "137",
+			"time": "28101",
+			"type": "gamemode",
+			"mode": 3
+		}
+,
+		{
+			"id": "138",
+			"time": "207120",
+			"type": "gamemode",
+			"mode": 4
+		}
+,
+		{
+			"id": "139",
+			"time": "210490",
+			"type": "gamemode",
+			"mode": 1
+		}
+,
+		{
+			"id": "140",
+			"time": "224174",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "144",
+			"time": "243921",
+			"type": "phase",
+			"duration": "2152791",
+			"tags": [
+				{
+					"name": "Competitive",
+					"icon": "cs2_logo",
+					"group": "Mode",
+					"priority": 500
+				}
+,
+				{
+					"name": "Mirage",
+					"icon": "map_icon_de_mirage",
+					"group": "Map",
+					"priority": 500
+				}
+
+			]
+
+		}
+,
+		{
+			"id": "141",
+			"time": "248921",
+			"type": "event",
+			"title": "Start of round 1",
+			"description": "Mirage",
+			"icon": "cs2_1",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "142",
+			"time": "243921",
+			"type": "state_description",
+			"title": "Round 1"
+		}
+,
+		{
+			"id": "143",
+			"time": "243921",
+			"type": "state_description",
+			"title": "Round 1"
+		}
+,
+		{
+			"id": "145",
+			"time": "310022",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the USP-S",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "146",
+			"time": "302740",
+			"type": "event",
+			"title": "Double kill",
+			"description": "You killed Uchiha Itachi and TenshiKage with the Glock-18",
+			"icon": "cs2_double_kill",
+			"priority": 1000,
+			"duration": "5875",
+			"possible_clip": 3
+		}
+,
+		{
+			"id": "147",
+			"time": "322145",
+			"type": "event",
+			"title": "Start of round 2",
+			"description": "Mirage",
+			"icon": "cs2_2",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "148",
+			"time": "317145",
+			"type": "state_description",
+			"title": "Round 2"
+		}
+,
+		{
+			"id": "149",
+			"time": "370770",
+			"type": "event",
+			"title": "You were killed by Stormb3ast",
+			"description": "with the MP9",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "150",
+			"time": "382760",
+			"type": "event",
+			"title": "Start of round 3",
+			"description": "Mirage",
+			"icon": "cs2_3",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "151",
+			"time": "377760",
+			"type": "state_description",
+			"title": "Round 3"
+		}
+,
+		{
+			"id": "152",
+			"time": "445220",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "153",
+			"time": "462995",
+			"type": "event",
+			"title": "You killed powerage",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "154",
+			"time": "475110",
+			"type": "event",
+			"title": "Start of round 4",
+			"description": "Mirage",
+			"icon": "cs2_4",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "155",
+			"time": "470110",
+			"type": "state_description",
+			"title": "Round 4"
+		}
+,
+		{
+			"id": "156",
+			"time": "516288",
+			"type": "event",
+			"title": "You were killed by powerage",
+			"description": "with the M4A1-S",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "157",
+			"time": "529880",
+			"type": "event",
+			"title": "Start of round 5",
+			"description": "Mirage",
+			"icon": "cs2_5",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "158",
+			"time": "524880",
+			"type": "state_description",
+			"title": "Round 5"
+		}
+,
+		{
+			"id": "159",
+			"time": "596160",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "-wh0AM1 アが恋しい planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "160",
+			"time": "637202",
+			"type": "event",
+			"title": "The bomb exploded",
+			"description": "",
+			"icon": "cs2_bomb_exploded",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "161",
+			"time": "649261",
+			"type": "event",
+			"title": "Start of round 6",
+			"description": "Mirage",
+			"icon": "cs2_6",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "162",
+			"time": "644261",
+			"type": "state_description",
+			"title": "Round 6"
+		}
+,
+		{
+			"id": "163",
+			"time": "869290",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "-wh0AM1 アが恋しい planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "164",
+			"time": "910311",
+			"type": "event",
+			"title": "The bomb exploded",
+			"description": "",
+			"icon": "cs2_bomb_exploded",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "165",
+			"time": "922355",
+			"type": "event",
+			"title": "Start of round 7",
+			"description": "Mirage",
+			"icon": "cs2_7",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "166",
+			"time": "917355",
+			"type": "state_description",
+			"title": "Round 7"
+		}
+,
+		{
+			"id": "167",
+			"time": "1032643",
+			"type": "event",
+			"title": "You killed TenshiKage",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "168",
+			"time": "1044707",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "You planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 500,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "169",
+			"time": "1062764",
+			"type": "event",
+			"title": "Double kill",
+			"description": "You killed Stormb3ast and powerage with the AK-47",
+			"icon": "cs2_double_kill",
+			"priority": 1000,
+			"duration": "6140",
+			"possible_clip": 3
+		}
+,
+		{
+			"id": "170",
+			"time": "1078975",
+			"type": "event",
+			"title": "Start of round 8",
+			"description": "Mirage",
+			"icon": "cs2_8",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "171",
+			"time": "1073975",
+			"type": "state_description",
+			"title": "Round 8"
+		}
+,
+		{
+			"id": "172",
+			"time": "1156809",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "-wh0AM1 アが恋しい planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "173",
+			"time": "1170127",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the M4A4",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "174",
+			"time": "1168454",
+			"type": "event",
+			"title": "You killed TenshiKage",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "175",
+			"time": "1178201",
+			"type": "event",
+			"title": "Bomb defused",
+			"description": "Stormb3ast defused the bomb",
+			"icon": "cs2_bomb_defused",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "176",
+			"time": "1190289",
+			"type": "event",
+			"title": "Start of round 9",
+			"description": "Mirage",
+			"icon": "cs2_9",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "177",
+			"time": "1185289",
+			"type": "state_description",
+			"title": "Round 9"
+		}
+,
+		{
+			"id": "178",
+			"time": "1245891",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "179",
+			"time": "1251326",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the AK-47",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "180",
+			"time": "1263332",
+			"type": "event",
+			"title": "Start of round 10",
+			"description": "Mirage",
+			"icon": "cs2_10",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "181",
+			"time": "1258332",
+			"type": "state_description",
+			"title": "Round 10"
+		}
+,
+		{
+			"id": "182",
+			"time": "1256391",
+			"type": "event",
+			"title": "You killed Stormb3ast",
+			"description": "with fire",
+			"icon": "cs2_inferno_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "183",
+			"time": "1337583",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "-wh0AM1 アが恋しい planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "184",
+			"time": "1338048",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the High Explosive Grenade",
+			"icon": "cs2_grenade_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "185",
+			"time": "1364210",
+			"type": "event",
+			"title": "Bomb defused",
+			"description": "Stormb3ast defused the bomb",
+			"icon": "cs2_bomb_defused",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "186",
+			"time": "1364891",
+			"type": "event",
+			"title": "You killed Stormb3ast",
+			"description": "with fire",
+			"icon": "cs2_inferno_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "187",
+			"time": "1376319",
+			"type": "event",
+			"title": "Start of round 11",
+			"description": "Mirage",
+			"icon": "cs2_11",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "188",
+			"time": "1371319",
+			"type": "state_description",
+			"title": "Round 11"
+		}
+,
+		{
+			"id": "189",
+			"time": "1413922",
+			"type": "event",
+			"title": "You killed TenshiKage",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "190",
+			"time": "1419264",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the M4A4",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "191",
+			"time": "1455025",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "-wh0AM1 アが恋しい planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "192",
+			"time": "1489151",
+			"type": "event",
+			"title": "Start of round 12",
+			"description": "Mirage",
+			"icon": "cs2_12",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "193",
+			"time": "1484151",
+			"type": "state_description",
+			"title": "Round 12"
+		}
+,
+		{
+			"id": "194",
+			"time": "1524571",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the M4A4",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "195",
+			"time": "1564838",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "krush666 planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "196",
+			"time": "1611621",
+			"type": "event",
+			"title": "Start of round 13",
+			"description": "Mirage",
+			"icon": "cs2_13",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "197",
+			"time": "1606621",
+			"type": "state_description",
+			"title": "Round 13"
+		}
+,
+		{
+			"id": "198",
+			"time": "1686499",
+			"type": "event",
+			"title": "Start of round 14",
+			"description": "Mirage",
+			"icon": "cs2_14",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "199",
+			"time": "1681499",
+			"type": "state_description",
+			"title": "Round 14"
+		}
+,
+		{
+			"id": "200",
+			"time": "1743111",
+			"type": "event",
+			"title": "You killed Stormb3ast",
+			"description": "with the MP9",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "201",
+			"time": "1755104",
+			"type": "event",
+			"title": "Start of round 15",
+			"description": "Mirage",
+			"icon": "cs2_15",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "202",
+			"time": "1750104",
+			"type": "state_description",
+			"title": "Round 15"
+		}
+,
+		{
+			"id": "203",
+			"time": "1821761",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the MP9",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "204",
+			"time": "1833882",
+			"type": "event",
+			"title": "Start of round 16",
+			"description": "Mirage",
+			"icon": "cs2_16",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "205",
+			"time": "1828882",
+			"type": "state_description",
+			"title": "Round 16"
+		}
+,
+		{
+			"id": "206",
+			"time": "1899568",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "Uchiha Itachi planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "207",
+			"time": "1920487",
+			"type": "event",
+			"title": "You killed Uchiha Itachi",
+			"description": "with the AK-47",
+			"icon": "cs2_gun_kill",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 2
+		}
+,
+		{
+			"id": "208",
+			"time": "1927691",
+			"type": "event",
+			"title": "You were killed by powerage",
+			"description": "with the AK-47",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "209",
+			"time": "1939704",
+			"type": "event",
+			"title": "Start of round 17",
+			"description": "Mirage",
+			"icon": "cs2_17",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "210",
+			"time": "1934705",
+			"type": "state_description",
+			"title": "Round 17"
+		}
+,
+		{
+			"id": "211",
+			"time": "1998231",
+			"type": "event",
+			"title": "Start of round 18",
+			"description": "Mirage",
+			"icon": "cs2_18",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "212",
+			"time": "1993231",
+			"type": "state_description",
+			"title": "Round 18"
+		}
+,
+		{
+			"id": "213",
+			"time": "2047378",
+			"type": "event",
+			"title": "You were killed by savageN",
+			"description": "with the AK-47",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "214",
+			"time": "2096426",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "Uchiha Itachi planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "215",
+			"time": "2129386",
+			"type": "event",
+			"title": "Start of round 19",
+			"description": "Mirage",
+			"icon": "cs2_19",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "216",
+			"time": "2124386",
+			"type": "state_description",
+			"title": "Round 19"
+		}
+,
+		{
+			"id": "217",
+			"time": "2212190",
+			"type": "event",
+			"title": "You were killed by Stormb3ast",
+			"description": "with the AK-47",
+			"icon": "cs2_death",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "218",
+			"time": "2253036",
+			"type": "event",
+			"title": "Bomb planted",
+			"description": "savageN planted the bomb",
+			"icon": "cs2_bomb_plant",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "219",
+			"time": "2267611",
+			"type": "event",
+			"title": "Bomb defused",
+			"description": "krush666 defused the bomb",
+			"icon": "cs2_bomb_defused",
+			"priority": 100,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "220",
+			"time": "2279580",
+			"type": "event",
+			"title": "Start of round 20",
+			"description": "Mirage",
+			"icon": "cs2_20",
+			"priority": 1000,
+			"duration": "0",
+			"possible_clip": 1
+		}
+,
+		{
+			"id": "221",
+			"time": "2274580",
+			"type": "state_description",
+			"title": "Round 20"
+		}
+,
+		{
+			"id": "222",
+			"time": "2396712",
+			"type": "gamemode",
+			"mode": 3
+		}
+
+	]
+,
+	"endtime": "2413560"
+}
