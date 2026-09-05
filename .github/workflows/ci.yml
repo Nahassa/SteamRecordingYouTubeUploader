@@ -41,11 +41,11 @@ jobs:
       # MSBuild accepts one project per invocation, so naming both here fails
       # with MSB1008 rather than restoring the pair.
       - name: Restore
-        run: dotnet restore tests/SteamRecUtility.Core.Tests
+        run: dotnet restore tests/SteamClipRemuxer.Core.Tests
 
       - name: Test
         run: >-
-          dotnet test tests/SteamRecUtility.Core.Tests
+          dotnet test tests/SteamClipRemuxer.Core.Tests
           --configuration Release --no-restore
           --logger "console;verbosity=normal"
 
@@ -64,15 +64,15 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore SteamRecUtility.sln
+        run: dotnet restore SteamClipRemuxer.sln
 
       - name: Build solution (includes the WinForms GUI)
-        run: dotnet build SteamRecUtility.sln --configuration Release --no-restore
+        run: dotnet build SteamClipRemuxer.sln --configuration Release --no-restore
 
       # The Linux job cannot compile the GUI, so this is the first point at which
       # the tests run against a build of the whole solution.
       - name: Test
-        run: dotnet test tests/SteamRecUtility.Core.Tests --configuration Release --no-build
+        run: dotnet test tests/SteamClipRemuxer.Core.Tests --configuration Release --no-build
 
       - name: Derive version
         id: version
@@ -88,9 +88,9 @@ jobs:
       - name: Publish GUI and CLI
         shell: pwsh
         run: |
-          dotnet publish src/SteamRecUtility.Gui -c Release -r win-x64 --self-contained true `
+          dotnet publish src/SteamClipRemuxer.Gui -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish/gui
-          dotnet publish src/SteamRecUtility.Cli -c Release -r win-x64 --self-contained true `
+          dotnet publish src/SteamClipRemuxer.Cli -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish/cli
 
       - name: Collect the executables
@@ -98,13 +98,13 @@ jobs:
         run: |
           $v = '${{ steps.version.outputs.version }}'
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item publish/gui/SteamRecUtility.exe "dist/SteamRecUtility-$v-win-x64.exe"
-          Copy-Item publish/cli/srec.exe "dist/srec-$v-win-x64.exe"
+          Copy-Item publish/gui/SteamClipRemuxer.exe "dist/SteamClipRemuxer-$v-win-x64.exe"
+          Copy-Item publish/cli/sclip.exe "dist/sclip-$v-win-x64.exe"
           Get-ChildItem dist | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v7
         with:
-          name: SteamRecUtility-${{ steps.version.outputs.version }}
+          name: SteamClipRemuxer-${{ steps.version.outputs.version }}
           path: dist/
           retention-days: 30
           if-no-files-found: error
@@ -119,5 +119,5 @@ jobs:
         run: |
           $v = '${{ steps.version.outputs.version }}'
           gh release upload '${{ github.event.release.tag_name }}' `
-            "dist/SteamRecUtility-$v-win-x64.exe" `
-            "dist/srec-$v-win-x64.exe" --clobber
+            "dist/SteamClipRemuxer-$v-win-x64.exe" `
+            "dist/sclip-$v-win-x64.exe" --clobber

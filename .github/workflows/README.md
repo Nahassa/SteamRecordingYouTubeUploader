@@ -16,14 +16,14 @@ two jobs, so restricting the trigger would only ever skip a build that mattered.
 
 ### Jobs
 
-**`test` (ubuntu-latest)** restores and runs `tests/SteamRecUtility.Core.Tests`
-in Release. `SteamRecUtility.Core` targets `net8.0` rather than `net8.0-windows`
+**`test` (ubuntu-latest)** restores and runs `tests/SteamClipRemuxer.Core.Tests`
+in Release. `SteamClipRemuxer.Core` targets `net8.0` rather than `net8.0-windows`
 and has no UI dependency, so its tests run anywhere and finish in seconds. This
 job gates the Windows one, which means a logic regression is reported without
 waiting on a Windows runner and a WinForms compile.
 
 The restore step names only the test project. MSBuild accepts one project per
-invocation, and the test project pulls `SteamRecUtility.Core` in through its
+invocation, and the test project pulls `SteamClipRemuxer.Core` in through its
 `ProjectReference` anyway.
 
 **`build` (windows-latest)** builds the whole solution including the WinForms
@@ -32,8 +32,8 @@ self-contained, single-file, ReadyToRun `win-x64` executables:
 
 | Project | Executable |
 |---|---|
-| `src/SteamRecUtility.Gui` | `SteamRecUtility-<version>-win-x64.exe` |
-| `src/SteamRecUtility.Cli` | `srec-<version>-win-x64.exe` |
+| `src/SteamClipRemuxer.Gui` | `SteamClipRemuxer-<version>-win-x64.exe` |
+| `src/SteamClipRemuxer.Cli` | `sclip-<version>-win-x64.exe` |
 
 `<version>` comes from the tag on a `v*` tag build (`v1.0.0` → `1.0.0`), and
 from the first seven characters of the commit SHA otherwise.
@@ -43,7 +43,7 @@ publishes sharing an output directory overwrite each other's runtime files.
 
 ### Getting the executables
 
-From a run: **Actions** → the run → **Artifacts** → `SteamRecUtility-<version>`,
+From a run: **Actions** → the run → **Artifacts** → `SteamClipRemuxer-<version>`,
 kept for 30 days.
 
 From a release: publishing a release uploads both executables to it as assets,

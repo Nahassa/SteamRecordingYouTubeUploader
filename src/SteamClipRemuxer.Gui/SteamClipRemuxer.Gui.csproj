@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SteamClipRemuxer</AssemblyName>
+    <RootNamespace>SteamClipRemuxer.Gui</RootNamespace>
+    <Product>Steam Clip Remuxer</Product>
+    <!-- Lets the solution build (and therefore be checked) on non-Windows hosts. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SteamClipRemuxer.Core/SteamClipRemuxer.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,18 +1,18 @@
 # YouTube Upload Setup Guide
 
-This guide explains how to set up YouTube upload functionality in the Steam Recording Utility.
+This guide explains how to set up YouTube upload functionality in the Steam Clip Remuxer.
 
 ## Prerequisites
 
 - Google Account
 - Access to Google Cloud Console
-- Steam Recording Utility installed
+- Steam Clip Remuxer installed
 
 ## Step 1: Create a Google Cloud Project
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
 2. Click "Select a project" → "New Project"
-3. Enter a project name (e.g., "Steam Recording Utility")
+3. Enter a project name (e.g., "Steam Clip Remuxer")
 4. Click "Create"
 
 ## Step 2: Enable YouTube Data API v3
@@ -27,7 +27,7 @@ This guide explains how to set up YouTube upload functionality in the Steam Reco
 2. Click "Create Credentials" → "OAuth client ID"
 3. If prompted, configure the OAuth consent screen:
    - User Type: External
-   - App name: "Steam Recording Utility" (or your choice)
+   - App name: "Steam Clip Remuxer" (or your choice)
    - User support email: Your email
    - Developer contact: Your email
    - Click "Save and Continue"
@@ -36,28 +36,32 @@ This guide explains how to set up YouTube upload functionality in the Steam Reco
    - Click "Save and Continue"
 4. Back to "Create OAuth client ID":
    - Application type: "Desktop app"
-   - Name: "Steam Recording Utility Desktop"
+   - Name: "Steam Clip Remuxer Desktop"
    - Click "Create"
 5. Download the JSON file (click the download button)
 
 ## Step 4: Install the Credentials File
 
 1. Rename the downloaded JSON file to exactly: `youtube_credentials.json`
-2. Place it in the same folder as `SteamRecUtility.exe`
+2. Place it in `%APPDATA%\SteamClipRemuxer` (paste that into the Explorer address
+   bar). The app creates the folder on first run.
 
-Example location:
+Not beside the .exe: the app is published as a single file, and installed under
+Program Files it cannot write next to itself without elevation.
+
 ```
-C:\MyApp\
-├── SteamRecUtility.exe
+%APPDATA%\SteamClipRemuxer\
 ├── youtube_credentials.json  ← Place here
-└── settings.json
+├── settings.json             ← written by the app
+└── youtube_token\            ← written after you sign in
 ```
 
 ## Step 5: Authenticate in the App
 
-1. Launch SteamRecUtility.exe
-2. Check "Upload converted videos to YouTube"
-3. Click "Authenticate with YouTube"
+1. Launch SteamClipRemuxer.exe
+2. Click "Settings", tick "Upload to YouTube after remuxing", click OK
+3. Click "Remux Selected". There is no separate sign-in button: the app
+   authenticates on the first remux after upload is enabled
 4. Your browser will open asking you to sign in with Google
 5. Select your Google account
 6. You'll see a warning "Google hasn't verified this app" (this is normal for personal projects):
@@ -73,6 +77,10 @@ C:\MyApp\
 Use placeholders to automatically generate video titles:
 - `{filename}` - File name without extension
 - `{filename_ext}` - File name with extension
+- `{game}` - Game name parsed from the recording's file name
+- `{clip}` - Clip label parsed from the recording's file name
+- `{recording_date}` - Date the clip was recorded
+- `{recording_time}` - Time the clip was recorded
 - `{date}` - Current date (YYYY-MM-DD)
 - `{time}` - Current time (HH:mm:ss)
 - `{datetime}` - Full datetime
@@ -92,7 +100,7 @@ Example:
 Gameplay recorded on {date}
 
 Original file: {filename_ext}
-Converted with Steam Recording Utility
+Converted with Steam Clip Remuxer
 ```
 
 ### Tags
@@ -120,9 +128,10 @@ Select the YouTube category that best fits your content:
 
 ## Troubleshooting
 
-### "YouTube API credentials file not found"
-- Make sure `youtube_credentials.json` is in the same folder as the .exe
-- Check the filename is exactly `youtube_credentials.json` (case-sensitive)
+### "No OAuth client file"
+- Make sure `youtube_credentials.json` is in `%APPDATA%\SteamClipRemuxer`
+- Check the filename is exactly `youtube_credentials.json`
+- The message names the folder it looked in; open that path directly
 
 ### "Google hasn't verified this app"
 - This is normal for personal projects
@@ -161,8 +170,8 @@ To check your quota usage:
 ## Security Notes
 
 - Keep `youtube_credentials.json` private (don't share it)
-- The app stores authentication tokens in `youtube_token.json`
-- Both files are gitignored by default
+- The app stores authentication tokens in the `youtube_token` folder beside it
+- Both live in `%APPDATA%\SteamClipRemuxer`, outside the repository
 - You can revoke access anytime in [Google Account Settings](https://myaccount.google.com/permissions)
 
 ## Template Examples
