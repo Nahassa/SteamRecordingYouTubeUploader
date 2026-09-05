@@ -1,0 +1,123 @@
+name: CI
+
+# Core is net8.0 and has no UI dependency, so its tests run on Linux in seconds.
+# Gating the Windows job on them means a logic regression is reported without
+# waiting on a Windows runner and a WinForms compile.
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Superseded pull request runs are cancelled; runs on main and on a release
+# publish artifacts, so those are always allowed to finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  test:
+    name: Test core (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      # Restoring the test project pulls Core in through its ProjectReference.
+      # MSBuild accepts one project per invocation, so naming both here fails
+      # with MSB1008 rather than restoring the pair.
+      - name: Restore
+        run: dotnet restore tests/SteamRecUtility.Core.Tests
+
+      - name: Test
+        run: >-
+          dotnet test tests/SteamRecUtility.Core.Tests
+          --configuration Release --no-restore
+          --logger "console;verbosity=normal"
+
+  build:
+    name: Build and publish (Windows)
+    needs: test
+    runs-on: windows-latest
+    # Only the release upload below writes, and only on a release event.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore SteamRecUtility.sln
+
+      - name: Build solution (includes the WinForms GUI)
+        run: dotnet build SteamRecUtility.sln --configuration Release --no-restore
+
+      # The Linux job cannot compile the GUI, so this is the first point at which
+      # the tests run against a build of the whole solution.
+      - name: Test
+        run: dotnet test tests/SteamRecUtility.Core.Tests --configuration Release --no-build
+
+      - name: Derive version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') { $v = $Matches[1] }
+          else { $v = $env:GITHUB_SHA.Substring(0, 7) }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Version: $v"
+
+      # Separate output folders: two self-contained single-file publishes into one
+      # directory overwrite each other's runtime files.
+      - name: Publish GUI and CLI
+        shell: pwsh
+        run: |
+          dotnet publish src/SteamRecUtility.Gui -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish/gui
+          dotnet publish src/SteamRecUtility.Cli -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish/cli
+
+      - name: Collect the executables
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item publish/gui/SteamRecUtility.exe "dist/SteamRecUtility-$v-win-x64.exe"
+          Copy-Item publish/cli/srec.exe "dist/srec-$v-win-x64.exe"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: SteamRecUtility-${{ steps.version.outputs.version }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+      # Uploaded with the runner's own gh rather than a third-party action, so the
+      # write token is never handed to code outside this repository.
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          gh release upload '${{ github.event.release.tag_name }}' `
+            "dist/SteamRecUtility-$v-win-x64.exe" `
+            "dist/srec-$v-win-x64.exe" --clobber

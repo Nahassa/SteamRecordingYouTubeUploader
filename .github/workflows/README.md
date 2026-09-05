@@ -1,81 +1,61 @@
-# GitHub Actions Workflows
+# GitHub Actions workflows
 
-This directory contains automated workflows for the Steam Recording Video Converter project.
+## ci.yml
 
-## build-app.yml
+Tests the core library and builds the Windows executables.
 
-Automatically builds the Steam Recording Utility executable for Windows x64.
+### Triggers
 
-### When It Runs
+- Push to `main` or any `claude/**` branch
+- Pull requests
+- A published release
+- Manual dispatch from the Actions tab
 
-The workflow triggers on:
+There are no path filters: every source file in the repository feeds one of the
+two jobs, so restricting the trigger would only ever skip a build that mattered.
 
-1. **Push to branches**:
-   - `main` branch
-   - Any `claude/**` branch
-   - Only when changes are made to `SteamRecUtility/` or the workflow file itself
+### Jobs
 
-2. **Pull requests**:
-   - When PRs modify `SteamRecUtility/`
+**`test` (ubuntu-latest)** restores and runs `tests/SteamRecUtility.Core.Tests`
+in Release. `SteamRecUtility.Core` targets `net8.0` rather than `net8.0-windows`
+and has no UI dependency, so its tests run anywhere and finish in seconds. This
+job gates the Windows one, which means a logic regression is reported without
+waiting on a Windows runner and a WinForms compile.
 
-3. **Releases**:
-   - When a GitHub release is created or published
+The restore step names only the test project. MSBuild accepts one project per
+invocation, and the test project pulls `SteamRecUtility.Core` in through its
+`ProjectReference` anyway.
 
-4. **Manual trigger**:
-   - Can be manually triggered from the Actions tab
+**`build` (windows-latest)** builds the whole solution including the WinForms
+GUI, re-runs the tests against that build, then publishes both front ends as
+self-contained, single-file, ReadyToRun `win-x64` executables:
 
-### What It Does
+| Project | Executable |
+|---|---|
+| `src/SteamRecUtility.Gui` | `SteamRecUtility-<version>-win-x64.exe` |
+| `src/SteamRecUtility.Cli` | `srec-<version>-win-x64.exe` |
 
-1. **Checks out code** from the repository
-2. **Sets up .NET 8.0** SDK
-3. **Restores dependencies** (Newtonsoft.Json)
-4. **Builds the executable**:
-   - Target: Windows x64
-   - Self-contained (includes .NET runtime)
-   - Single file executable
-   - Ready-to-run compilation for faster startup
-5. **Gets version**:
-   - From git tag if available (e.g., `v1.0.0` → `1.0.0`)
-   - From commit SHA if no tag (first 7 characters)
-6. **Renames executable** with version: `SteamRecUtility-1.0.0-win-x64.exe`
-7. **Uploads as artifact**:
-   - Available for download from the Actions run page
-   - Retained for 30 days
-8. **Attaches to release** (only for release events):
-   - Automatically uploads the executable to the GitHub release
+`<version>` comes from the tag on a `v*` tag build (`v1.0.0` → `1.0.0`), and
+from the first seven characters of the commit SHA otherwise.
 
-### Accessing Built Executables
+The two publishes write to separate folders. Two self-contained single-file
+publishes sharing an output directory overwrite each other's runtime files.
 
-#### From Actions Run:
-1. Go to the "Actions" tab in your repository
-2. Click on a workflow run
-3. Scroll down to "Artifacts"
-4. Download `SteamRecUtility-[version]`
+### Getting the executables
 
-#### From Releases:
-- When you create a release, the executable is automatically attached as an asset
+From a run: **Actions** → the run → **Artifacts** → `SteamRecUtility-<version>`,
+kept for 30 days.
 
-### Manual Triggering
+From a release: publishing a release uploads both executables to it as assets,
+using the runner's own `gh` and the automatic `GITHUB_TOKEN`.
 
-To manually build the executable:
+### Permissions
 
-1. Go to "Actions" tab
-2. Select "Build SteamRec Utility" workflow
-3. Click "Run workflow"
-4. Select the branch
-5. Click "Run workflow" button
+The workflow is `contents: read` by default. The `build` job takes
+`contents: write` because it uploads release assets; nothing else writes.
 
-The built executable will be available as an artifact.
+## cleanup-artifacts.yml
 
-### Requirements
-
-No setup required - GitHub Actions provides everything needed:
-- Windows runner
-- .NET SDK
-- PowerShell
-
-### Notes
-
-- Build time is typically 2-5 minutes
-- The executable is fully portable (self-contained)
-- No secrets or tokens needed (except for release uploads, which use the automatic `GITHUB_TOKEN`)
+Manual-dispatch only. Deletes build artifacts older than a day, keeping the five
+most recent. Artifacts already expire after 30 days on their own, so this is for
+reclaiming storage sooner rather than something that needs to run on a schedule.
