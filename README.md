@@ -1,4 +1,4 @@
-# SteamRec Utility
+# Steam Clip Remuxer
 
 Turns Steam's 4:3 Counter-Strike recordings into stretched 16:9 clips **without
 re-encoding them**, then optionally uploads them to YouTube.
@@ -79,14 +79,14 @@ Steam names clips like `CounterStrike_2__20260808_104557_PM__Double_kill.mp4`, s
 `{game} - {clip}` gives *"CounterStrike 2 - Double kill"*.
 
 OAuth setup is in [docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md). Credentials, tokens and
-settings live in `%APPDATA%\SteamRecUtility`.
+settings live in `%APPDATA%\SteamClipRemuxer`.
 
 ## Layout
 
 ```
-src/SteamRecUtility.Core/    net8.0, no UI reference - the whole pipeline
-src/SteamRecUtility.Cli/     srec
-src/SteamRecUtility.Gui/     WinForms shell
+src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
+src/SteamClipRemuxer.Cli/     srec
+src/SteamClipRemuxer.Gui/     WinForms shell
 tests/                       86 tests, no ffmpeg or GPU needed
 ```
 
@@ -101,6 +101,6 @@ Encoder policy, and the defects this rewrite exists to remove, are documented in
 ## Building
 
 ```
-dotnet test tests/SteamRecUtility.Core.Tests    # runs anywhere
-dotnet build SteamRecUtility.sln                # the GUI needs Windows
+dotnet test tests/SteamClipRemuxer.Core.Tests    # runs anywhere
+dotnet build SteamClipRemuxer.sln                # the GUI needs Windows
 ```
