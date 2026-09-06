@@ -18,6 +18,12 @@ public sealed record UploadRequest
     public string CategoryId { get; init; } = "20";
     public bool MadeForKids { get; init; }
     public bool AgeRestricted { get; init; }
+
+    /// <summary>
+    /// When the clip was actually recorded, from clip.pb. Sent as the video's recording date so
+    /// the moment survives without having to appear in the title.
+    /// </summary>
+    public DateTimeOffset? RecordedAt { get; init; }
 }
 
 public sealed record UploadResult(bool Success, string? VideoId, string? VideoUrl, string? Error)
@@ -123,6 +129,17 @@ public sealed class YouTubeClient
                     ContentRating = new ContentRating { YtRating = "ytAgeRestricted" },
                 };
                 parts += ",contentDetails";
+            }
+
+            // Same trap as contentDetails above: without the part, the API accepts the upload
+            // and drops the recording date without saying so.
+            if (request.RecordedAt is { } recordedAt)
+            {
+                video.RecordingDetails = new VideoRecordingDetails
+                {
+                    RecordingDateDateTimeOffset = recordedAt,
+                };
+                parts += ",recordingDetails";
             }
 
             await using var stream = new FileStream(

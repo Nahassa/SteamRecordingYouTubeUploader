@@ -3,6 +3,19 @@ using System.Text.Json.Serialization;
 
 namespace SteamClipRemuxer.Core.Configuration;
 
+/// <summary>How far through the pipeline a clip has got.</summary>
+public enum ClipState
+{
+    /// <summary>Never handled.</summary>
+    New,
+
+    /// <summary>Remuxed, but not on YouTube. The state an upload-only run works from.</summary>
+    Remuxed,
+
+    /// <summary>Remuxed and uploaded. Nothing left to do.</summary>
+    Uploaded,
+}
+
 /// <summary>One clip the tool has already handled.</summary>
 public sealed record ProcessedClip
 {
@@ -15,11 +28,25 @@ public sealed record ProcessedClip
     /// <summary>Title used, so a duplicate report can say what the clip was.</summary>
     public string Title { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Where the remuxed file was written. This is what lets a later run upload a clip that was
+    /// remuxed while upload was off, without remuxing it a second time.
+    /// </summary>
+    public string OutputPath { get; init; } = string.Empty;
+
+    /// <summary>When the clip was recorded, so an upload-only run can still set the recording date.</summary>
+    public DateTimeOffset? RecordedAt { get; init; }
+
     public DateTimeOffset? RemuxedAt { get; init; }
     public DateTimeOffset? UploadedAt { get; init; }
 
     /// <summary>Set once the clip reached YouTube, so the log doubles as a record of what is up there.</summary>
     public string? YouTubeVideoId { get; init; }
+
+    public ClipState State =>
+        UploadedAt is not null ? ClipState.Uploaded
+        : RemuxedAt is not null ? ClipState.Remuxed
+        : ClipState.New;
 }
 
 /// <summary>
@@ -64,13 +91,30 @@ public sealed class ProcessedClipLog
         return uploadEnabled ? entry.UploadedAt is not null : entry.RemuxedAt is not null;
     }
 
-    public void MarkRemuxed(string id, string clipFolder, string title)
+    /// <summary>State for any clip, including ones never seen before.</summary>
+    public ClipState StateOf(string id) => Find(id)?.State ?? ClipState.New;
+
+    /// <summary>
+    /// Clips remuxed but not yet uploaded, oldest first. This is what an upload-only run works
+    /// from: the file already exists, so the remux does not have to happen again.
+    /// </summary>
+    public IReadOnlyList<ProcessedClip> PendingUpload() =>
+        _entries.Values
+            .Where(e => e.State == ClipState.Remuxed)
+            .OrderBy(e => e.RemuxedAt ?? DateTimeOffset.MinValue)
+            .ToList();
+
+    public void MarkRemuxed(
+        string id, string clipFolder, string title,
+        string outputPath = "", DateTimeOffset? recordedAt = null)
     {
         ProcessedClip existing = Find(id) ?? new ProcessedClip { Id = id };
         _entries[id] = existing with
         {
             ClipFolder = clipFolder,
             Title = title,
+            OutputPath = outputPath,
+            RecordedAt = recordedAt ?? existing.RecordedAt,
             RemuxedAt = DateTimeOffset.UtcNow,
         };
     }

@@ -47,6 +47,21 @@ public sealed class AppSettings
     /// </summary>
     public bool SkipAlreadyProcessed { get; set; } = true;
 
+    /// <summary>
+    /// Name for the file written from a Steam clip folder. Reading those folders replaces the
+    /// export step, so the clip arrives with no name of its own. The time is part of the default
+    /// because two double kills in one evening would otherwise collide, and it is the clip's own
+    /// recorded moment rather than the run's, so reprocessing renames nothing.
+    /// </summary>
+    public string ClipFileNameTemplate { get; set; } = Highlights.ClipNaming.DefaultTemplate;
+
+    /// <summary>
+    /// YouTube title for a clip whose highlight is known. Deliberately carries no timestamp: the
+    /// moment is sent as the video's recording date, where YouTube can use it, instead of being
+    /// spent on title characters.
+    /// </summary>
+    public string YouTubeClipTitleTemplate { get; set; } = Youtube.TitleTemplate.DefaultClipTitle;
+
     public bool EnableYouTubeUpload { get; set; }
     public string YouTubeTitleTemplate { get; set; } = "{game} - {clip}";
     public string YouTubeDescriptionTemplate { get; set; } = "Recorded {recording_date}";

@@ -117,6 +117,16 @@ public class ClipManifestTests
     }
 
     [Fact]
+    public void Resolves_the_game_from_the_app_id()
+    {
+        // A clip folder carries no game name, only the id, so a clip read this way would
+        // otherwise be named "App 730".
+        ClipManifest m = Load("clip_cropped_7435ms.pb");
+        Assert.Equal(730, m.AppId);
+        Assert.Equal("Counter-Strike 2", m.GameName);
+    }
+
+    [Fact]
     public void Suggested_name_is_optional()
     {
         Assert.Equal("Counter-Strike 2 - 2026-09-05 10:27:35 PM",

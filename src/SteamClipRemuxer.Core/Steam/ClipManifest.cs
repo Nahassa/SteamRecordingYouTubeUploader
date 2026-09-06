@@ -29,6 +29,15 @@ public sealed record ClipManifest
     public string VideoSessionFolder { get; init; } = string.Empty;
 
     /// <summary>
+    /// Steam application id the clip was recorded from. A clip folder carries no game name, so
+    /// this is the only thing to derive one from.
+    /// </summary>
+    public int AppId { get; init; }
+
+    /// <summary>The game's name, or a readable fallback when the id is not one we know.</summary>
+    public string GameName => SteamApps.NameFor(AppId);
+
+    /// <summary>
     /// How far the video session starts after the timeline session. Observed between 19.6s and
     /// 35.3s across samples, so it is never safe to assume: session.mpd's Period@start is measured
     /// from the video session, and only adding this reaches the timeline's coordinates.
@@ -88,6 +97,7 @@ public sealed record ClipManifest
     private const int HeightField = 13;
 
     private const int TimelineNameField = 1;
+    private const int AppIdField = 2;
     private const int SessionStartEpochField = 3;
     private const int DurationMsField = 4;
     private const int VideoBlockField = 5;
@@ -108,6 +118,7 @@ public sealed record ClipManifest
     {
         string? timelineFile = null;
         long sessionEpoch = 0, startMs = -1, durationMs = -1, videoOffsetMs = 0;
+        int appId = 0;
         string videoFolder = string.Empty;
         string? suggestedName = null;
         int width = 0, height = 0;
@@ -125,7 +136,7 @@ public sealed record ClipManifest
                 {
                     if (!reader.TryReadLengthDelimited(out ReadOnlySpan<byte> block)) return null;
                     if (!ParseSessionBlock(block, ref timelineFile, ref sessionEpoch, ref durationMs,
-                            ref videoFolder, ref videoOffsetMs, attributes, stats)) return null;
+                            ref videoFolder, ref videoOffsetMs, ref appId, attributes, stats)) return null;
                     break;
                 }
                 case StartInSessionMs when wire == WireType.Varint:
@@ -163,6 +174,7 @@ public sealed record ClipManifest
             StartInSession = TimeSpan.FromMilliseconds(startMs),
             Duration = TimeSpan.FromMilliseconds(durationMs),
             VideoSessionFolder = videoFolder,
+            AppId = appId,
             VideoSessionOffset = TimeSpan.FromMilliseconds(videoOffsetMs),
             SuggestedName = suggestedName,
             Width = width,
@@ -190,7 +202,7 @@ public sealed record ClipManifest
 
     private static bool ParseSessionBlock(
         ReadOnlySpan<byte> block, ref string? timelineFile, ref long sessionEpoch,
-        ref long durationMs, ref string videoFolder, ref long videoOffsetMs,
+        ref long durationMs, ref string videoFolder, ref long videoOffsetMs, ref int appId,
         Dictionary<string, string> attributes, Dictionary<string, string> stats)
     {
         var reader = new ProtobufReader(block);
@@ -203,6 +215,10 @@ public sealed record ClipManifest
                 case TimelineNameField when wire == WireType.LengthDelimited:
                     if (!reader.TryReadString(out string tl)) return false;
                     timelineFile = tl;
+                    break;
+                case AppIdField when wire == WireType.Varint:
+                    if (!reader.TryReadVarint(out ulong app)) return false;
+                    appId = (int)app;
                     break;
                 case SessionStartEpochField when wire == WireType.Varint:
                     if (!reader.TryReadVarint(out ulong epoch)) return false;
