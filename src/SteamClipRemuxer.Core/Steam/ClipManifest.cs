@@ -57,6 +57,22 @@ public sealed record ClipManifest
     public TimeSpan EndInSession => StartInSession + Duration;
 
     /// <summary>
+    /// Stable identity for the moment this clip captures, used to recognise a clip already
+    /// processed so it is not uploaded to YouTube twice.
+    ///
+    /// It deliberately identifies the content rather than the folder. The clip folder is named
+    /// for when Save was pressed, so re-saving the same moment produces a new folder and would
+    /// look like new work while yielding a duplicate upload. Session, offset and length together
+    /// stay the same across a re-save, survive a folder being renamed or moved, and still tell
+    /// two different crops of the same fight apart.
+    ///
+    /// The timeline file alone cannot serve: it covers a whole session, so every clip cut from
+    /// one 90 minute match would collide.
+    /// </summary>
+    public string Id =>
+        $"{TimelineFile}:{(long)StartInSession.TotalMilliseconds}:{(long)Duration.TotalMilliseconds}";
+
+    /// <summary>
     /// True when the clip is shorter than Steam's configured recording buffer, i.e. the user
     /// actually cropped it. An uncropped clip is exactly the buffer length - 120000ms on the
     /// samples measured - so a strict comparison separates the two cleanly.

@@ -19,6 +19,34 @@ public sealed class AppSettings
     public bool MoveProcessedFiles { get; set; } = true;
     public bool FastStart { get; set; } = true;
 
+    /// <summary>Where clips are read from. See <see cref="Configuration.ClipSource"/>.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ClipSource ClipSource { get; set; } = ClipSource.ExportedFiles;
+
+    /// <summary>
+    /// Longest clip to process, in seconds. Steam writes an untouched clip at exactly the
+    /// recording buffer length, so anything shorter is one the user actually cropped. The
+    /// buffer is a Steam setting rather than a fixed value, hence configurable here; the
+    /// comparison is strict, so leaving this at the buffer length excludes untouched clips
+    /// without needing a tolerance.
+    /// </summary>
+    public int MaxClipSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// Cut the output down to the range cropped in Steam. Steam's crop point usually falls
+    /// mid-GOP, so the cut lands on the nearest earlier keyframe: still a verbatim packet copy,
+    /// never a re-encode, but up to a segment shorter than an exact frame cut would be.
+    /// Turn off to keep the whole of every DASH segment the clip touches, which leaves the
+    /// output a byte-for-byte copy of the complete source stream.
+    /// </summary>
+    public bool RespectSteamCrop { get; set; } = true;
+
+    /// <summary>
+    /// Skip clips already handled, so Steam's clip list can be left alone instead of deleting
+    /// clips there to avoid uploading the same highlight twice.
+    /// </summary>
+    public bool SkipAlreadyProcessed { get; set; } = true;
+
     public bool EnableYouTubeUpload { get; set; }
     public string YouTubeTitleTemplate { get; set; } = "{game} - {clip}";
     public string YouTubeDescriptionTemplate { get; set; } = "Recorded {recording_date}";
