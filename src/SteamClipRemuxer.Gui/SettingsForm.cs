@@ -31,6 +31,12 @@ public sealed class SettingsForm : Form
 
     private readonly TextBox _clipFileName = new() { Width = 380 };
 
+    private readonly TextBox _gameNames = new()
+    {
+        Width = 380, Multiline = true, Height = 70, ScrollBars = ScrollBars.Vertical,
+        AcceptsReturn = true,
+    };
+
     private readonly CheckBox _uploadEnabled = new() { Text = "Upload to YouTube after remuxing", AutoSize = true };
     private readonly TextBox _title = new() { Width = 380 };
     private readonly TextBox _description = new() { Width = 380 };
@@ -88,6 +94,12 @@ public sealed class SettingsForm : Form
         layout.Controls.Add(Note(
             "Placeholders: {game} {recording_date} {recording_time} {highlight} {highlight_full} "
             + "{weapon} {map} {mode} {round} {kills}"));
+
+        layout.Controls.Add(Row("Game names:", _gameNames));
+        layout.Controls.Add(Note(
+            "One per line, as 'app id = name', for example '730 = Counter-Strike 2'. A Steam clip "
+            + "folder names its game only by id, so a game with no entry here is called "
+            + "'App 440'. Counter-Strike 2 is built in; anything set here wins over that."));
 
         layout.Controls.Add(Header("YouTube"));
         layout.Controls.Add(_uploadEnabled);
@@ -166,6 +178,8 @@ public sealed class SettingsForm : Form
         _skipProcessed.Checked = _settings.SkipAlreadyProcessed;
         _clipFileName.Text = _settings.ClipFileNameTemplate;
 
+        _gameNames.Text = SteamClipRemuxer.Core.Steam.SteamApps.FormatOverrides(_settings.GameNames);
+
         _uploadEnabled.Checked = _settings.EnableYouTubeUpload;
         _title.Text = _settings.YouTubeTitleTemplate;
         _description.Text = _settings.YouTubeDescriptionTemplate;
@@ -191,6 +205,8 @@ public sealed class SettingsForm : Form
         _settings.ClipFileNameTemplate = string.IsNullOrWhiteSpace(_clipFileName.Text)
             ? SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultTemplate
             : _clipFileName.Text;
+
+        _settings.GameNames = SteamClipRemuxer.Core.Steam.SteamApps.ParseOverrides(_gameNames.Text);
 
         _settings.EnableYouTubeUpload = _uploadEnabled.Checked;
         _settings.YouTubeTitleTemplate = _title.Text;

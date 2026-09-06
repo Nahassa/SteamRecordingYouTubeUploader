@@ -62,6 +62,13 @@ public sealed class AppSettings
     /// </summary>
     public string YouTubeClipTitleTemplate { get; set; } = Youtube.TitleTemplate.DefaultClipTitle;
 
+    /// <summary>
+    /// Game names by Steam app id, e.g. "730" -> "Counter-Strike 2". A clip folder identifies its
+    /// game only by id, so without an entry an unrecognised game is named "App 440". Only
+    /// Counter-Strike 2 is built in, and anything set here wins over that.
+    /// </summary>
+    public Dictionary<string, string> GameNames { get; set; } = new();
+
     public bool EnableYouTubeUpload { get; set; }
     public string YouTubeTitleTemplate { get; set; } = "{game} - {clip}";
     public string YouTubeDescriptionTemplate { get; set; } = "Recorded {recording_date}";

@@ -224,3 +224,80 @@ public class ClipTrimTests
         Assert.Null(ClipRemuxService.TrimOffsetFor(m, exact));
     }
 }
+
+public class SteamAppsTests
+{
+    [Fact]
+    public void Counter_strike_is_known_without_any_setting()
+    {
+        Assert.Equal("Counter-Strike 2", SteamApps.NameFor(730));
+        Assert.False(SteamApps.IsUnknown(730));
+    }
+
+    [Fact]
+    public void An_unknown_id_is_readable_rather_than_blank()
+    {
+        Assert.Equal("App 440", SteamApps.NameFor(440));
+        Assert.True(SteamApps.IsUnknown(440));
+    }
+
+    [Fact]
+    public void A_name_the_user_set_wins_over_the_built_in_one()
+    {
+        var overrides = new Dictionary<string, string> { ["730"] = "CS2" };
+
+        Assert.Equal("CS2", SteamApps.NameFor(730, overrides));
+        Assert.Equal("Team Fortress 2", SteamApps.NameFor(440, new Dictionary<string, string>
+        {
+            ["440"] = "Team Fortress 2",
+        }));
+    }
+
+    [Fact]
+    public void A_blank_name_falls_back_rather_than_producing_an_empty_title()
+    {
+        var overrides = new Dictionary<string, string> { ["440"] = "   " };
+
+        Assert.Equal("App 440", SteamApps.NameFor(440, overrides));
+        Assert.True(SteamApps.IsUnknown(440, overrides));
+    }
+
+    [Theory]
+    [InlineData("730 = Counter-Strike 2")]
+    [InlineData("730=Counter-Strike 2")]
+    [InlineData("  730 : Counter-Strike 2  ")]
+    public void Accepts_the_separators_someone_would_actually_type(string line)
+    {
+        Assert.Equal("Counter-Strike 2", SteamApps.ParseOverrides(line)["730"]);
+    }
+
+    [Fact]
+    public void A_half_typed_line_does_not_throw_away_the_rest()
+    {
+        Dictionary<string, string> map = SteamApps.ParseOverrides(
+            "730 = Counter-Strike 2\nnonsense\n= no id\n440 =\n# a comment\n440 = Team Fortress 2");
+
+        Assert.Equal(2, map.Count);
+        Assert.Equal("Counter-Strike 2", map["730"]);
+        Assert.Equal("Team Fortress 2", map["440"]);
+    }
+
+    [Fact]
+    public void Round_trips_through_the_settings_window()
+    {
+        Dictionary<string, string> map = SteamApps.ParseOverrides("440 = Team Fortress 2\n730 = CS2");
+
+        // Lowest id first, so editing does not reshuffle the list every time.
+        Assert.Equal("440 = Team Fortress 2" + Environment.NewLine + "730 = CS2",
+            SteamApps.FormatOverrides(map));
+        Assert.Equal(map, SteamApps.ParseOverrides(SteamApps.FormatOverrides(map)));
+    }
+
+    [Fact]
+    public void An_empty_list_formats_to_nothing()
+    {
+        Assert.Equal(string.Empty, SteamApps.FormatOverrides(new Dictionary<string, string>()));
+        Assert.Empty(SteamApps.ParseOverrides(""));
+        Assert.Empty(SteamApps.ParseOverrides(null));
+    }
+}

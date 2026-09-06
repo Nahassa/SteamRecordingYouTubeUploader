@@ -20,6 +20,12 @@ public sealed record ClipListing
     /// <summary>The name the output file would be given.</summary>
     public required string SuggestedName { get; init; }
 
+    /// <summary>
+    /// The game's name. Resolved from the app id where the settings are in scope, so a name the
+    /// user has set for an id reaches the file name and the YouTube title alike.
+    /// </summary>
+    public required string GameName { get; init; }
+
     public DateTimeOffset RecordedAt => Clip.Manifest.SessionStart + Clip.Manifest.StartInSession;
 
     /// <summary>What the list shows for this row.</summary>
@@ -88,13 +94,23 @@ public sealed class ClipBatchService
             Highlight? highlight = ReadHighlight(clip, log);
             DateTimeOffset recordedAt = clip.Manifest.SessionStart + clip.Manifest.StartInSession;
 
+            string game = SteamApps.NameFor(clip.Manifest.AppId, settings.GameNames);
+
+            if (SteamApps.IsUnknown(clip.Manifest.AppId, settings.GameNames))
+            {
+                log.Warning(
+                    $"  App id {clip.Manifest.AppId} has no name, so clips from it are called "
+                    + $"'{game}'. Set one in Settings under Game names.");
+            }
+
             listings.Add(new ClipListing
             {
                 Clip = clip,
                 State = processed.StateOf(clip.Manifest.Id),
                 Highlight = highlight,
+                GameName = game,
                 SuggestedName = ClipNaming.Expand(
-                    settings.ClipFileNameTemplate, clip.Manifest.GameName, recordedAt, highlight),
+                    settings.ClipFileNameTemplate, game, recordedAt, highlight),
             });
         }
 
@@ -195,7 +211,7 @@ public sealed class ClipBatchService
                 settings.YouTubeClipTitleTemplate, remux.OutputPath,
                 settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
                 highlight: listing.Highlight, recordedAt: listing.RecordedAt,
-                game: manifest.GameName);
+                game: listing.GameName);
 
             processed.MarkRemuxed(
                 manifest.Id, listing.Clip.FolderName, title, remux.OutputPath, listing.RecordedAt);
@@ -245,7 +261,7 @@ public sealed class ClipBatchService
                 settings.YouTubeDescriptionTemplate, output,
                 settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
                 highlight: listing.Highlight, recordedAt: listing.RecordedAt,
-                game: listing.Clip.Manifest.GameName),
+                game: listing.GameName),
             Tags = settings.ParsedTags,
             PrivacyStatus = settings.YouTubePrivacyStatus,
             CategoryId = settings.YouTubeCategoryId,

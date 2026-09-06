@@ -34,7 +34,10 @@ public sealed record ClipManifest
     /// </summary>
     public int AppId { get; init; }
 
-    /// <summary>The game's name, or a readable fallback when the id is not one we know.</summary>
+    /// <summary>
+    /// The game's built-in name, or a readable fallback. Callers with settings in scope should
+    /// use SteamApps.NameFor with the user's own list instead, so a name they have set wins.
+    /// </summary>
     public string GameName => SteamApps.NameFor(AppId);
 
     /// <summary>
