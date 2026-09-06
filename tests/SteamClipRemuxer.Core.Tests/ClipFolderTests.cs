@@ -86,6 +86,25 @@ public class ClipFolderTests : IDisposable
     }
 
     [Fact]
+    public void Finds_the_thumbnail_steam_wrote()
+    {
+        // The preview uses this rather than decoding a frame: the clip is a folder, and asking
+        // ffprobe to open a directory fails with "Permission denied".
+        Directory.CreateDirectory(_root);
+        string clip = MakeClip(_root);
+        File.WriteAllBytes(Path.Combine(clip, "thumbnail.jpg"), new byte[] { 0xFF, 0xD8 });
+
+        Assert.NotNull(ClipFolder.TryRead(clip)!.ThumbnailPath);
+    }
+
+    [Fact]
+    public void A_clip_with_no_thumbnail_is_still_usable()
+    {
+        Directory.CreateDirectory(_root);
+        Assert.Null(ClipFolder.TryRead(MakeClip(_root))!.ThumbnailPath);
+    }
+
+    [Fact]
     public void A_clip_without_video_segments_is_skipped_rather_than_failing_the_scan()
     {
         Directory.CreateDirectory(_root);

@@ -366,6 +366,15 @@ public sealed class MainForm : Form
         ClearPreview();
         _clipInfo.Text = "Reading clip...";
 
+        // A Steam clip is a folder, not a file. Probing it asks ffprobe to open a directory,
+        // which fails with "Permission denied". Everything the preview needs is already in the
+        // folder: clip.pb describes the clip and Steam has written a thumbnail.
+        if (entry.Listing is { } listing)
+        {
+            ShowSteamClipPreview(listing);
+            return;
+        }
+
         try
         {
             entry.Media ??= await _probe.ProbeAsync(entry.Path).ConfigureAwait(true);
@@ -406,6 +415,86 @@ public sealed class MainForm : Form
             _clipInfo.Text = $"Could not read this clip: {ex.Message}";
             Log(LogLevel.Warning, $"{entry}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Preview for one of Steam's clip folders. Uses the thumbnail Steam already wrote rather
+    /// than decoding a frame, so it is instant and needs no external process at all.
+    /// </summary>
+    private void ShowSteamClipPreview(ClipListing listing)
+    {
+        ClipManifest manifest = listing.Clip.Manifest;
+        AspectRatio target = _settings.ParsedTargetAspect;
+
+        var lines = new List<string>();
+
+        string frame = manifest.Width > 0 && manifest.Height > 0
+            ? $"{manifest.Width}x{manifest.Height} ({new AspectRatio(manifest.Width, manifest.Height)} frame), "
+            : "";
+        lines.Add($"{frame}{manifest.Duration.TotalSeconds:0.#}s");
+
+        if (listing.Highlight is { } highlight)
+        {
+            var context = new List<string>();
+            if (highlight.Map is { Length: > 0 } map) context.Add(map);
+            if (highlight.Mode is { Length: > 0 } mode) context.Add(mode);
+            if (highlight.Round is { } round) context.Add($"round {round}");
+            if (highlight.PlantedBomb) context.Add("you planted");
+            if (highlight.DefusedBomb) context.Add("you defused");
+
+            lines.Add(context.Count > 0
+                ? $"{highlight.Describe()} - {string.Join(", ", context)}"
+                : highlight.Describe());
+        }
+        else if (listing.Clip.TimelinePath is null)
+        {
+            lines.Add("No timeline in this clip, so the title falls back to a plain name.");
+        }
+
+        lines.Add($"Will be tagged {target}. Video copied, not re-encoded.");
+        lines.Add($"-> {listing.SuggestedName}.mp4");
+
+        _clipInfo.Text = string.Join(Environment.NewLine, lines);
+
+        if (listing.Clip.ThumbnailPath is not { } thumbnail)
+        {
+            return;
+        }
+
+        try
+        {
+            // Read the bytes rather than Image.FromFile, which holds the file open for the
+            // lifetime of the image and would keep a lock on Steam's own folder.
+            using var stream = new MemoryStream(File.ReadAllBytes(thumbnail));
+            using var decoded = Image.FromStream(stream);
+            _preview.Image = StretchToDisplayAspect(decoded, target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Log(LogLevel.Warning, $"{listing.SuggestedName}: thumbnail unreadable ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
+    /// Redraws the thumbnail at the aspect the clip will display at. Steam's thumbnail is the
+    /// stored 4:3 frame, so showing it untouched would preview the squashed picture rather than
+    /// the stretched one the remux produces.
+    /// </summary>
+    private static Bitmap StretchToDisplayAspect(Image source, AspectRatio displayAspect)
+    {
+        int height = Math.Max(1, source.Height);
+        int width = Math.Max(1, (int)Math.Round(
+            height * (double)displayAspect.Numerator / displayAspect.Denominator));
+
+        var stretched = new Bitmap(width, height);
+        using (var graphics = Graphics.FromImage(stretched))
+        {
+            graphics.InterpolationMode =
+                System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            graphics.DrawImage(source, 0, 0, width, height);
+        }
+
+        return stretched;
     }
 
     // ------------------------------------------------------------------ batch
