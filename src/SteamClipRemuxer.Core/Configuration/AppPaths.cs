@@ -14,5 +14,11 @@ public static class AppPaths
     public static string YouTubeCredentialsFile => Path.Combine(DataDirectory, "youtube_credentials.json");
     public static string YouTubeTokenStore => Path.Combine(DataDirectory, "youtube_token");
 
+    /// <summary>
+    /// Which clips have already been handled. Kept with the app's own state rather than in the
+    /// recording folder, so it survives clearing out clips and is not lost when Steam tidies up.
+    /// </summary>
+    public static string ProcessedClipsFile => Path.Combine(DataDirectory, "processed_clips.json");
+
     public static void EnsureCreated() => Directory.CreateDirectory(DataDirectory);
 }

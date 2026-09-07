@@ -20,6 +20,13 @@ public sealed record SourceMedia
     public string? ColorRange { get; init; }
     public string? ColorSpace { get; init; }
     public double DurationSeconds { get; init; }
+
+    /// <summary>
+    /// Presentation time of the first frame. Concatenated DASH segments keep the timestamps
+    /// they had inside the recording session, so this is a long way from zero and a trim offset
+    /// has to be measured against it rather than assumed to start at the beginning.
+    /// </summary>
+    public double StartTimeSeconds { get; init; }
     public required IReadOnlyList<MediaStream> Streams { get; init; }
 
     /// <summary>How the file actually displays, accounting for non-square pixels.</summary>
@@ -65,6 +72,13 @@ public sealed record SourceMedia
         // it is unknown. Both mean square.
         AspectRatio sar = AspectRatio.TryParse(Str(v, "sample_aspect_ratio")) ?? AspectRatio.Square;
 
+        double startTime = 0;
+        if (double.TryParse(
+                Str(v, "start_time"), NumberStyles.Float, CultureInfo.InvariantCulture, out double st))
+        {
+            startTime = st;
+        }
+
         double duration = 0;
         if (root.TryGetProperty("format", out JsonElement fmt) &&
             double.TryParse(Str(fmt, "duration"), NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
@@ -83,6 +97,7 @@ public sealed record SourceMedia
             ColorRange = Str(v, "color_range"),
             ColorSpace = Str(v, "color_space"),
             DurationSeconds = duration,
+            StartTimeSeconds = startTime,
             Streams = all,
         };
     }

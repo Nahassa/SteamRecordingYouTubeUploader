@@ -14,6 +14,29 @@ public sealed class SettingsForm : Form
     private readonly CheckBox _moveProcessed = new() { Text = "Move originals into processed/", AutoSize = true };
     private readonly CheckBox _fastStart = new() { Text = "Optimise for playback (faststart)", AutoSize = true };
 
+    private readonly NumericUpDown _maxClipSeconds = new()
+    {
+        Width = 80, Minimum = 1, Maximum = 3600, Increment = 5,
+    };
+
+    private readonly CheckBox _respectCrop = new()
+    {
+        Text = "Cut to the range cropped in Steam", AutoSize = true,
+    };
+
+    private readonly CheckBox _skipProcessed = new()
+    {
+        Text = "Skip clips already processed", AutoSize = true,
+    };
+
+    private readonly TextBox _clipFileName = new() { Width = 380 };
+
+    private readonly TextBox _gameNames = new()
+    {
+        Width = 380, Multiline = true, Height = 70, ScrollBars = ScrollBars.Vertical,
+        AcceptsReturn = true,
+    };
+
     private readonly CheckBox _uploadEnabled = new() { Text = "Upload to YouTube after remuxing", AutoSize = true };
     private readonly TextBox _title = new() { Width = 380 };
     private readonly TextBox _description = new() { Width = 380 };
@@ -55,6 +78,28 @@ public sealed class SettingsForm : Form
         layout.Controls.Add(Note(
             "The video stream is always copied, never re-encoded, so there is nothing to "
             + "configure for quality. Output is bit-identical to the recording."));
+
+        layout.Controls.Add(Header("Steam clips"));
+        layout.Controls.Add(Row("Longest clip to process (s):", _maxClipSeconds));
+        layout.Controls.Add(Note(
+            "Steam writes an untouched clip at exactly the recording buffer length, so anything "
+            + "shorter is one you cropped yourself. Match this to the buffer length set in Steam."));
+        layout.Controls.Add(_respectCrop);
+        layout.Controls.Add(Note(
+            "Steam's crop point usually falls mid-GOP, so the cut lands on the nearest earlier "
+            + "keyframe. Either way the video is copied, never re-encoded; unticking keeps whole "
+            + "segments and a little more footage than you cropped."));
+        layout.Controls.Add(_skipProcessed);
+        layout.Controls.Add(Row("Clip file name:", _clipFileName));
+        layout.Controls.Add(Note(
+            "Placeholders: {game} {recording_date} {recording_time} {highlight} {highlight_full} "
+            + "{weapon} {map} {mode} {round} {kills}"));
+
+        layout.Controls.Add(Row("Game names:", _gameNames));
+        layout.Controls.Add(Note(
+            "One per line, as 'app id = name', for example '730 = Counter-Strike 2'. A Steam clip "
+            + "folder names its game only by id, so a game with no entry here is called "
+            + "'App 440'. Counter-Strike 2 is built in; anything set here wins over that."));
 
         layout.Controls.Add(Header("YouTube"));
         layout.Controls.Add(_uploadEnabled);
@@ -127,6 +172,14 @@ public sealed class SettingsForm : Form
         _moveProcessed.Checked = _settings.MoveProcessedFiles;
         _fastStart.Checked = _settings.FastStart;
 
+        _maxClipSeconds.Value = Math.Clamp(
+            _settings.MaxClipSeconds, (int)_maxClipSeconds.Minimum, (int)_maxClipSeconds.Maximum);
+        _respectCrop.Checked = _settings.RespectSteamCrop;
+        _skipProcessed.Checked = _settings.SkipAlreadyProcessed;
+        _clipFileName.Text = _settings.ClipFileNameTemplate;
+
+        _gameNames.Text = SteamClipRemuxer.Core.Steam.SteamApps.FormatOverrides(_settings.GameNames);
+
         _uploadEnabled.Checked = _settings.EnableYouTubeUpload;
         _title.Text = _settings.YouTubeTitleTemplate;
         _description.Text = _settings.YouTubeDescriptionTemplate;
@@ -145,6 +198,15 @@ public sealed class SettingsForm : Form
         _settings.TargetDisplayAspect = string.IsNullOrWhiteSpace(_aspect.Text) ? "16:9" : _aspect.Text.Trim();
         _settings.MoveProcessedFiles = _moveProcessed.Checked;
         _settings.FastStart = _fastStart.Checked;
+
+        _settings.MaxClipSeconds = (int)_maxClipSeconds.Value;
+        _settings.RespectSteamCrop = _respectCrop.Checked;
+        _settings.SkipAlreadyProcessed = _skipProcessed.Checked;
+        _settings.ClipFileNameTemplate = string.IsNullOrWhiteSpace(_clipFileName.Text)
+            ? SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultTemplate
+            : _clipFileName.Text;
+
+        _settings.GameNames = SteamClipRemuxer.Core.Steam.SteamApps.ParseOverrides(_gameNames.Text);
 
         _settings.EnableYouTubeUpload = _uploadEnabled.Checked;
         _settings.YouTubeTitleTemplate = _title.Text;

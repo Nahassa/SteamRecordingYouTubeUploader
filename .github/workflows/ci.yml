@@ -1,8 +1,12 @@
 name: CI
 
-# Core is net8.0 and has no UI dependency, so its tests run on Linux in seconds.
-# Gating the Windows job on them means a logic regression is reported without
-# waiting on a Windows runner and a WinForms compile.
+# Compiling and packaging are separate jobs on purpose.
+#
+# Proving the code builds is wanted on every push. Producing a self-contained,
+# single-file, ReadyToRun executable is not: it is the slow part of the run and it
+# leaves a ~105MB artifact behind. Running both together meant ten work-in-progress
+# commits produced a gigabyte of artifacts nobody asked for, so packaging now happens
+# only when a binary is actually wanted.
 
 on:
   push:
@@ -12,11 +16,14 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Superseded pull request runs are cancelled; runs on main and on a release
-# publish artifacts, so those are always allowed to finish.
+# Superseded runs on a feature branch or pull request are cancelled: pushing three
+# commits in a row should not occupy a Windows runner three times. Runs on main, on a
+# release and on a manual trigger produce something, so those always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request'
+     || (github.event_name == 'push' && github.ref != 'refs/heads/main') }}
 
 permissions:
   contents: read
@@ -50,12 +57,9 @@ jobs:
           --logger "console;verbosity=normal"
 
   build:
-    name: Build and publish (Windows)
+    name: Compile solution (Windows)
     needs: test
     runs-on: windows-latest
-    # Only the release upload below writes, and only on a release event.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -66,13 +70,35 @@ jobs:
       - name: Restore
         run: dotnet restore SteamClipRemuxer.sln
 
+      # The Linux SDK omits the WindowsDesktop targeting pack, so this is the only
+      # place the WinForms GUI is compiled at all. Worth doing on every push even
+      # though nothing is packaged here.
       - name: Build solution (includes the WinForms GUI)
         run: dotnet build SteamClipRemuxer.sln --configuration Release --no-restore
 
-      # The Linux job cannot compile the GUI, so this is the first point at which
-      # the tests run against a build of the whole solution.
-      - name: Test
+      - name: Test against the Windows build
         run: dotnet test tests/SteamClipRemuxer.Core.Tests --configuration Release --no-build
+
+  package:
+    name: Publish executables (Windows)
+    needs: [test, build]
+    runs-on: windows-latest
+    # Only when a binary is actually wanted. workflow_dispatch is deliberately not
+    # restricted to main: running the workflow by hand against a feature branch is how
+    # a change gets tested before it is merged.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event_name == 'release'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Only the release upload below writes, and only on a release event.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Derive version
         id: version
@@ -106,7 +132,9 @@ jobs:
         with:
           name: SteamClipRemuxer-${{ steps.version.outputs.version }}
           path: dist/
-          retention-days: 30
+          # A hand-triggered build is for trying a branch out, so it expires sooner
+          # than the build of main people may come back to.
+          retention-days: ${{ github.event_name == 'workflow_dispatch' && 7 || 30 }}
           if-no-files-found: error
 
       # Uploaded with the runner's own gh rather than a third-party action, so the

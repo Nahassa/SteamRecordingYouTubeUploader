@@ -9,25 +9,48 @@ namespace SteamClipRemuxer.Core.Youtube;
 /// </summary>
 public static class TitleTemplate
 {
+    /// <summary>
+    /// Default for clips read from Steam's own folders. Carries no timestamp: the moment is sent
+    /// as the video's recording date instead, which is where YouTube can actually use it.
+    /// </summary>
+    public const string DefaultClipTitle = "{game} - {highlight_full}";
+
     public static string Expand(
         string template,
         string filePath,
         bool removeDateFromFilename = false,
         string removeTextPatterns = "",
-        DateTime? now = null)
+        DateTime? now = null,
+        Highlights.Highlight? highlight = null,
+        DateTimeOffset? recordedAt = null,
+        string? game = null)
     {
         DateTime timestamp = now ?? DateTime.Now;
         string stem = Path.GetFileNameWithoutExtension(filePath);
         ClipName clip = ClipName.Parse(stem);
 
-        string recordingDate = clip.RecordedAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
-        string recordingTime = clip.RecordedAt?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "";
+        // A clip read from Steam's folders knows exactly when it was recorded, so that beats
+        // anything guessed from the filename.
+        DateTimeOffset? recorded = recordedAt
+            ?? (clip.RecordedAt is { } fromName ? new DateTimeOffset(fromName, TimeSpan.Zero) : null);
+
+        string recordingDate = recorded?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+        string recordingTime = recorded?.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "";
 
         string result = template
+            .Replace("{highlight}", highlight?.Label ?? "")
+            .Replace("{highlight_full}", highlight?.Describe() ?? "")
+            .Replace("{weapon}", highlight?.Weapon ?? "")
+            .Replace("{map}", highlight?.Map ?? "")
+            .Replace("{mode}", highlight?.Mode ?? "")
+            .Replace("{round}", highlight?.Round?.ToString(CultureInfo.InvariantCulture) ?? "")
+            .Replace("{kills}", highlight is null ? "" : highlight.KillCount.ToString(CultureInfo.InvariantCulture))
             .Replace("{filename}", stem)
             .Replace("{filename_ext}", Path.GetFileName(filePath))
             .Replace("{clip}", clip.Title)
-            .Replace("{game}", clip.Game)
+            // A clip folder names its game only by app id, so the caller supplies it; the
+            // filename fallback only works for names Steam itself produced.
+            .Replace("{game}", game ?? clip.Game)
             .Replace("{recording_date}", recordingDate)
             .Replace("{recording_time}", recordingTime)
             .Replace("{date}", timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
@@ -44,13 +67,28 @@ public static class TitleTemplate
     }
 
     /// <summary>
-    /// Strips both date layouts Steam and this tool have produced: ISO "2026-08-08" and
-    /// Steam's own "20260808_104557_PM".
+    /// Strips every timestamp layout Steam and this tool have produced, so a title can be about
+    /// the play rather than when it happened. The upload carries the real moment in the video's
+    /// recording date instead, where YouTube can use it.
+    ///
+    /// Order matters: the combined date-and-time form is removed first, because taking the date
+    /// out of "2026-08-28 21-52-42" would leave a bare "21-52-42" behind.
     /// </summary>
     public static string RemoveDates(string input)
     {
+        // Steam's own: "20260808_104557_PM".
         string result = Regex.Replace(input, @"\d{8}_\d{6}(?:_(?:AM|PM))?", "", RegexOptions.IgnoreCase);
+
+        // This tool's clip names: "2026-08-28 21-52-42".
+        result = Regex.Replace(result, @"\d{4}-\d{2}-\d{2}[ T_]\d{2}[-:]\d{2}[-:]\d{2}", "");
+
+        // ISO date on its own.
         result = Regex.Replace(result, @"\d{4}-\d{2}-\d{2}", "");
+
+        // A time left on its own, in either separator. Anchored so it cannot eat the tail of a
+        // date or a score like "13 : 9".
+        result = Regex.Replace(result, @"(?<!\d)\d{2}[-:]\d{2}[-:]\d{2}(?!\d)", "");
+
         return Tidy(result);
     }
 

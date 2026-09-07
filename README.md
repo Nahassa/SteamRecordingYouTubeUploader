@@ -41,14 +41,45 @@ range) and variable frame timing are preserved exactly.
 - Windows x64, .NET 8
 - `ffmpeg` and `ffprobe` on PATH, or passed with `--ffmpeg` / `--ffprobe`
 
+## Two sources
+
+**Source** on the main window chooses where clips come from.
+
+**Exported video files** are the files Steam writes when you use its Export Clip button.
+Nothing links an export back to the recording it came from — the name Steam suggests is the
+moment you pressed Save, 25 minutes adrift from the clip's contents on one measured sample —
+so a title can only be built from the filename.
+
+**Steam clips** reads Steam's own clip folders under `<recording folder>/clips` and replaces
+the export step entirely: the clip goes straight from what Steam recorded to a finished file.
+Each folder carries a `clip.pb` locating it in the session timeline, which is what makes a
+real title possible.
+
+|                        | Exported files | Steam clips |
+|---|---|---|
+| Needs exporting first  | yes | no |
+| Knows map, mode, round | no | yes |
+| Titles from            | the filename | what actually happened |
+
+Point **Input** at your Steam recording folder, or at its `clips` subfolder; either works.
+
+Clips still at the full recording buffer are skipped, because an untouched clip spans whole
+rounds and has no single moment worth uploading. Steam writes one at *exactly* the buffer
+length, so **Longest clip to process** excludes them with no tolerance needed — set it to the
+buffer length configured in Steam.
+
+Clips already handled are listed greyed out rather than hidden, so Steam's clip list can be
+left alone instead of deleting clips there to avoid uploading the same highlight twice.
+
 ## GUI
 
 Pick an input folder and an output folder, tick the clips you want, press **Remux Selected**.
 The preview shows each clip at its *display* aspect, so you see the stretched result before
-committing.
+committing. For a Steam clip it uses the thumbnail Steam already wrote, so it is instant.
 
 Originals move to `<input>/processed/`. If YouTube upload is on, uploaded clips move to
 `<output>/uploaded/` — they are kept, not deleted, so you can still play them locally.
+Steam's own clip folders are only ever read; nothing is written back into them.
 
 ## CLI
 
@@ -75,8 +106,33 @@ streams         2 (1 audio)
 Templates accept `{game}`, `{clip}`, `{recording_date}`, `{recording_time}`, `{filename}`,
 `{filename_ext}`, `{date}`, `{time}`, `{datetime}`, `{year}`, `{month}`, `{day}`.
 
-Steam names clips like `CounterStrike_2__20260808_104557_PM__Double_kill.mp4`, so
-`{game} - {clip}` gives *"CounterStrike 2 - Double kill"*.
+Reading Steam's clip folders adds `{highlight}`, `{highlight_full}`, `{weapon}`, `{map}`,
+`{mode}`, `{round}` and `{kills}`, so `{game} - {highlight_full}` gives
+*"Counter-Strike 2 - Double kill with the AK-47"*. No player name ever reaches a title:
+Steam writes them into every event description, and they are dropped when the highlight is
+worked out rather than filtered afterwards.
+
+Steam's own multi-kill labels are not trusted, because measurement showed them wrong in both
+directions — a triple reported as two separate events, and, in deathmatch, 45 of 74 labelled
+multi-kills naming the same victim twice. Kills are recounted from the individual events.
+
+The clip's recorded moment is sent as the video's **recording date**, so the default title
+carries no timestamp at all rather than spending characters on one.
+
+A clip folder names its game only by Steam app id. Counter-Strike 2 is built in; anything
+else is named under **Game names** in settings, as `app id = name` lines.
+
+### Why YouTube shows 720p
+
+A stretched clip is 1280x960 stored with a 4:3 sample aspect, which displays as 1707x960.
+YouTube normalises to its own ladder — 144, 240, 360, 480, 720, 1080 — and 960 is not on it.
+It will not upscale, so 720p is the tallest rendition it can build.
+
+This is not fixable by any setting here, and 960p cannot be forced. Reaching 1080p would mean
+resampling, and resampling means re-encoding, which is the one thing this tool exists not to
+do. Uploading unstretched 4:3 does not help either: still 960 tall, still 720p, and
+pillarboxed. The deliberate choice is to keep every file a verbatim copy and let YouTube do
+the downscale.
 
 OAuth setup is in [docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md). Credentials, tokens and
 settings live in `%APPDATA%\SteamClipRemuxer`.
@@ -87,8 +143,15 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
-tests/                       86 tests, no ffmpeg or GPU needed
+tests/                       201 tests, no ffmpeg or GPU needed
 ```
+
+`Core/Steam/` reads what Steam writes beside a clip: `clip.pb` through a small protobuf
+reader, since Valve publishes no schema, and the DASH segments. `session.mpd` cannot be given
+to FFmpeg directly — its `Period@start` is measured from the start of the recording session
+while `mediaPresentationDuration` is only the clip's length, so the demuxer computes a
+nonsense period and stops after one segment. The segments are concatenated instead, which is
+a byte copy.
 
 Core targets `net8.0` rather than `net8.0-windows` deliberately: a WinForms reference is a
 compile error there, not merely bad practice. Commands are built as argument *lists* and

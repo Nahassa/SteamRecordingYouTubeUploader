@@ -1,6 +1,8 @@
 using SteamClipRemuxer.Core.Configuration;
 using SteamClipRemuxer.Core.Execution;
+using SteamClipRemuxer.Core.Highlights;
 using SteamClipRemuxer.Core.Probing;
+using SteamClipRemuxer.Core.Steam;
 using SteamClipRemuxer.Core.Thumbnails;
 using SteamClipRemuxer.Core.Timelines;
 using SteamClipRemuxer.Core.Youtube;
@@ -14,7 +16,14 @@ internal sealed class ClipEntry
     public SourceMedia? Media { get; set; }
     public string? ProbeError { get; set; }
 
-    public override string ToString() => System.IO.Path.GetFileName(Path);
+    /// <summary>Set when the row came from one of Steam's clip folders rather than an exported file.</summary>
+    public ClipListing? Listing { get; init; }
+
+    /// <summary>Already remuxed or uploaded, so the row is drawn greyed out.</summary>
+    public bool IsProcessed => Listing is not null && Listing.State != ClipState.New;
+
+    public override string ToString() =>
+        Listing?.Describe() ?? System.IO.Path.GetFileName(Path);
 }
 
 public sealed class MainForm : Form
@@ -24,6 +33,8 @@ public sealed class MainForm : Form
     private readonly MediaProbe _probe;
     private readonly ThumbnailExtractor _thumbnails;
     private readonly BatchService _batch;
+    private readonly ClipBatchService _clipBatch;
+    private readonly ProcessedClipLog _processed;
     private readonly YouTubeClient _youtube = new();
 
     private readonly LogForm _log = new();
@@ -33,7 +44,23 @@ public sealed class MainForm : Form
 
     private readonly TextBox _inputFolder = new() { Dock = DockStyle.Fill };
     private readonly TextBox _outputFolder = new() { Dock = DockStyle.Fill };
-    private readonly CheckedListBox _clips = new() { Dock = DockStyle.Fill, IntegralHeight = false, CheckOnClick = true };
+    private readonly CheckedListBox _clips = new()
+    {
+        Dock = DockStyle.Fill,
+        IntegralHeight = false,
+        CheckOnClick = true,
+        // Owner drawn so a clip already handled can be greyed out rather than hidden: a row that
+        // silently fails to appear is hard to tell from one the tool never found.
+        DrawMode = DrawMode.OwnerDrawFixed,
+        ItemHeight = 20,
+    };
+
+    private readonly ComboBox _source = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 190,
+        Height = 30,
+    };
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Black };
     private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 68, Padding = new Padding(6) };
 
@@ -60,6 +87,14 @@ public sealed class MainForm : Form
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
         _batch = new BatchService(remuxService,
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+
+        var clipRemuxService = new ClipRemuxService(
+            _runner, _probe, new VideoStreamHasher(_runner),
+            new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+        _clipBatch = new ClipBatchService(clipRemuxService,
+            new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+
+        _processed = ProcessedClipLog.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
 
         BuildLayout();
         Restore();
@@ -126,6 +161,23 @@ public sealed class MainForm : Form
         var reload = new Button { Text = "Reload", Width = 90, Height = 30 };
         reload.Click += (_, _) => LoadClips();
 
+        // On the main window rather than buried in settings: it changes what the list shows, so
+        // it belongs next to the list.
+        _source.Items.AddRange(new object[]
+        {
+            new SourceChoice(ClipSource.ExportedFiles, "Exported video files"),
+            new SourceChoice(ClipSource.SteamClips, "Steam clips (unexported)"),
+        });
+        _source.SelectedIndexChanged += (_, _) =>
+        {
+            if (_source.SelectedItem is not SourceChoice choice) return;
+            if (choice.Value == _settings.ClipSource) return;
+
+            _settings.ClipSource = choice.Value;
+            _settings.Save(onError: m => Log(LogLevel.Warning, m));
+            LoadClips();
+        };
+
         var settings = new Button { Text = "Settings", Width = 100, Height = 30 };
         settings.Click += (_, _) => OpenSettings();
 
@@ -137,8 +189,13 @@ public sealed class MainForm : Form
 
         actions.Controls.AddRange(new Control[]
         {
-            _remux, _cancel, _selectAll, reload, settings, timelines, showLog,
+            _remux, _cancel, _selectAll, reload,
+            new Label { Text = "Source:", Width = 52, Height = 30, TextAlign = ContentAlignment.MiddleRight },
+            _source,
+            settings, timelines, showLog,
         });
+
+        _clips.DrawItem += DrawClipRow;
 
         // --- status ----------------------------------------------------------
         var statusBar = new Panel { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(8, 4, 8, 4) };
@@ -169,6 +226,7 @@ public sealed class MainForm : Form
     {
         _inputFolder.Text = _settings.InputFolder;
         _outputFolder.Text = _settings.OutputFolder;
+        SelectSource(_settings.ClipSource);
         if (Directory.Exists(_inputFolder.Text)) LoadClips();
     }
 
@@ -200,11 +258,89 @@ public sealed class MainForm : Form
             return;
         }
 
+        _settings.InputFolder = _inputFolder.Text;
+
+        if (_settings.ClipSource == ClipSource.SteamClips) LoadSteamClips();
+        else LoadExportedFiles();
+
+        if (_clips.Items.Count > 0) _clips.SelectedIndex = 0;
+    }
+
+    private void LoadExportedFiles()
+    {
         IReadOnlyList<string> files = BatchService.FindRecordings(_inputFolder.Text);
         foreach (string file in files) _clips.Items.Add(new ClipEntry { Path = file }, isChecked: true);
 
         SetStatus($"{files.Count} clip(s) found.");
-        if (files.Count > 0) _clips.SelectedIndex = 0;
+    }
+
+    private void LoadSteamClips()
+    {
+        var log = new DelegatePipelineLog((level, message) => Log(level, message));
+
+        if (ClipFolder.ResolveClipsRoot(_inputFolder.Text) is null)
+        {
+            // Being specific here matters: the folder looks right to a person, and the reason it
+            // yields nothing is not visible from the outside.
+            SetStatus("No Steam clips found in this folder.");
+            Log(LogLevel.Warning,
+                $"No clip_* folders under '{_inputFolder.Text}'. Point Input at your Steam "
+                + "recording folder (the one holding a 'clips' subfolder), or at 'clips' itself.");
+            return;
+        }
+
+        IReadOnlyList<ClipListing> clips = ClipBatchService.FindClips(_settings, _processed, log);
+
+        foreach (ClipListing clip in clips)
+        {
+            // Already handled clips are listed but not selected, so pressing Remux does not
+            // silently redo them while they stay visible.
+            _clips.Items.Add(
+                new ClipEntry { Path = clip.Clip.Path, Listing = clip },
+                isChecked: clip.State == ClipState.New);
+        }
+
+        int done = clips.Count(c => c.State != ClipState.New);
+        SetStatus(done == 0
+            ? $"{clips.Count} clip(s) found."
+            : $"{clips.Count} clip(s) found, {done} already done.");
+    }
+
+    /// <summary>
+    /// Draws a row. Owner drawing means the checkbox has to be painted too, since the control
+    /// only draws it for us in its normal mode.
+    /// </summary>
+    private void DrawClipRow(object? sender, DrawItemEventArgs e)
+    {
+        e.DrawBackground();
+        if (e.Index < 0 || e.Index >= _clips.Items.Count) return;
+
+        var entry = _clips.Items[e.Index] as ClipEntry;
+        bool processed = entry?.IsProcessed ?? false;
+        bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+
+        var glyph = new Point(e.Bounds.Left + 2, e.Bounds.Top + (e.Bounds.Height - 14) / 2);
+        var state = _clips.GetItemChecked(e.Index)
+            ? (processed
+                ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedDisabled
+                : System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal)
+            : (processed
+                ? System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedDisabled
+                : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
+        CheckBoxRenderer.DrawCheckBox(e.Graphics, glyph, state);
+
+        var text = new Rectangle(
+            e.Bounds.Left + 22, e.Bounds.Top, Math.Max(0, e.Bounds.Width - 24), e.Bounds.Height);
+
+        Color colour = processed
+            ? (selected ? SystemColors.HighlightText : SystemColors.GrayText)
+            : e.ForeColor;
+
+        TextRenderer.DrawText(
+            e.Graphics, entry?.ToString() ?? string.Empty, e.Font ?? Font, text, colour,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+        e.DrawFocusRectangle();
     }
 
     private void ToggleAll()
@@ -229,6 +365,15 @@ public sealed class MainForm : Form
 
         ClearPreview();
         _clipInfo.Text = "Reading clip...";
+
+        // A Steam clip is a folder, not a file. Probing it asks ffprobe to open a directory,
+        // which fails with "Permission denied". Everything the preview needs is already in the
+        // folder: clip.pb describes the clip and Steam has written a thumbnail.
+        if (entry.Listing is { } listing)
+        {
+            ShowSteamClipPreview(listing);
+            return;
+        }
 
         try
         {
@@ -272,11 +417,96 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Preview for one of Steam's clip folders. Uses the thumbnail Steam already wrote rather
+    /// than decoding a frame, so it is instant and needs no external process at all.
+    /// </summary>
+    private void ShowSteamClipPreview(ClipListing listing)
+    {
+        ClipManifest manifest = listing.Clip.Manifest;
+        AspectRatio target = _settings.ParsedTargetAspect;
+
+        var lines = new List<string>();
+
+        string frame = manifest.Width > 0 && manifest.Height > 0
+            ? $"{manifest.Width}x{manifest.Height} ({new AspectRatio(manifest.Width, manifest.Height)} frame), "
+            : "";
+        lines.Add($"{frame}{manifest.Duration.TotalSeconds:0.#}s");
+
+        if (listing.Highlight is { } highlight)
+        {
+            var context = new List<string>();
+            if (highlight.Map is { Length: > 0 } map) context.Add(map);
+            if (highlight.Mode is { Length: > 0 } mode) context.Add(mode);
+            if (highlight.Round is { } round) context.Add($"round {round}");
+            if (highlight.PlantedBomb) context.Add("you planted");
+            if (highlight.DefusedBomb) context.Add("you defused");
+
+            lines.Add(context.Count > 0
+                ? $"{highlight.Describe()} - {string.Join(", ", context)}"
+                : highlight.Describe());
+        }
+        else if (listing.Clip.TimelinePath is null)
+        {
+            lines.Add("No timeline in this clip, so the title falls back to a plain name.");
+        }
+
+        lines.Add($"Will be tagged {target}. Video copied, not re-encoded.");
+        lines.Add($"-> {listing.SuggestedName}.mp4");
+
+        _clipInfo.Text = string.Join(Environment.NewLine, lines);
+
+        if (listing.Clip.ThumbnailPath is not { } thumbnail)
+        {
+            return;
+        }
+
+        try
+        {
+            // Read the bytes rather than Image.FromFile, which holds the file open for the
+            // lifetime of the image and would keep a lock on Steam's own folder.
+            using var stream = new MemoryStream(File.ReadAllBytes(thumbnail));
+            using var decoded = Image.FromStream(stream);
+            _preview.Image = StretchToDisplayAspect(decoded, target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Log(LogLevel.Warning, $"{listing.SuggestedName}: thumbnail unreadable ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
+    /// Redraws the thumbnail at the aspect the clip will display at. Steam's thumbnail is the
+    /// stored 4:3 frame, so showing it untouched would preview the squashed picture rather than
+    /// the stretched one the remux produces.
+    /// </summary>
+    private static Bitmap StretchToDisplayAspect(Image source, AspectRatio displayAspect)
+    {
+        int height = Math.Max(1, source.Height);
+        int width = Math.Max(1, (int)Math.Round(
+            height * (double)displayAspect.Numerator / displayAspect.Denominator));
+
+        var stretched = new Bitmap(width, height);
+        using (var graphics = Graphics.FromImage(stretched))
+        {
+            graphics.InterpolationMode =
+                System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            graphics.DrawImage(source, 0, 0, width, height);
+        }
+
+        return stretched;
+    }
+
     // ------------------------------------------------------------------ batch
 
     private async Task RunBatchAsync()
     {
-        List<string> selected = _clips.CheckedItems.Cast<ClipEntry>().Select(c => c.Path).ToList();
+        List<ClipEntry> checkedEntries = _clips.CheckedItems.Cast<ClipEntry>().ToList();
+        List<string> selected = checkedEntries.Select(c => c.Path).ToList();
+        List<ClipListing> selectedClips = checkedEntries
+            .Where(c => c.Listing is not null)
+            .Select(c => c.Listing!)
+            .ToList();
 
         if (selected.Count == 0)
         {
@@ -323,9 +553,13 @@ public sealed class MainForm : Form
 
         try
         {
-            IReadOnlyList<ClipOutcome> outcomes = await _batch
-                .RunAsync(selected, _settings, _youtube, progress, _cancellation.Token)
-                .ConfigureAwait(true);
+            IReadOnlyList<ClipOutcome> outcomes = _settings.ClipSource == ClipSource.SteamClips
+                ? await _clipBatch
+                    .RunAsync(selectedClips, _settings, _processed, _youtube, progress, _cancellation.Token)
+                    .ConfigureAwait(true)
+                : await _batch
+                    .RunAsync(selected, _settings, _youtube, progress, _cancellation.Token)
+                    .ConfigureAwait(true);
 
             int failed = outcomes.Count(o => !o.Succeeded);
             SetStatus(failed == 0 ? "Finished." : $"Finished with {failed} failure(s).");
@@ -410,4 +644,22 @@ public sealed class MainForm : Form
         }
         base.Dispose(disposing);
     }
+
+    private void SelectSource(ClipSource source)
+    {
+        for (int i = 0; i < _source.Items.Count; i++)
+        {
+            if (_source.Items[i] is SourceChoice choice && choice.Value == source)
+            {
+                _source.SelectedIndex = i;
+                return;
+            }
+        }
+    }
+}
+
+/// <summary>A clip source as the drop-down shows it.</summary>
+internal sealed record SourceChoice(ClipSource Value, string Label)
+{
+    public override string ToString() => Label;
 }
