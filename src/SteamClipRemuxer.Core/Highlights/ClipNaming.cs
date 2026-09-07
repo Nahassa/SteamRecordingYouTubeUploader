@@ -21,11 +21,20 @@ public static class ClipNaming
     /// </summary>
     public const string DefaultTemplate = "{game} - {recording_date} {recording_time} - {highlight}";
 
+    /// <summary>
+    /// Default layout for a compilation. It has no single highlight to name, so the moment of
+    /// the earliest clip in it stands in - which keeps the name stable if the same set is built
+    /// again.
+    /// </summary>
+    public const string DefaultCompilationTemplate =
+        "{game} - Compilation - {recording_date} {recording_time} ({count} clips)";
+
     public static string Expand(
         string template,
         string game,
         DateTimeOffset recordedAt,
-        Highlight? highlight)
+        Highlight? highlight,
+        int? count = null)
     {
         string result = template
             .Replace("{game}", game)
@@ -39,7 +48,9 @@ public static class ClipNaming
             .Replace("{map}", highlight?.Map ?? string.Empty)
             .Replace("{mode}", highlight?.Mode ?? string.Empty)
             .Replace("{round}", highlight?.Round?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)
-            .Replace("{kills}", highlight?.KillCount.ToString(CultureInfo.InvariantCulture) ?? "0");
+            .Replace("{kills}", highlight?.KillCount.ToString(CultureInfo.InvariantCulture) ?? "0")
+            // Only a compilation has a count; elsewhere it collapses away with its separators.
+            .Replace("{count}", count?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
 
         return Sanitise(result);
     }

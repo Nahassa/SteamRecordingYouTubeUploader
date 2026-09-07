@@ -24,11 +24,11 @@ public sealed class AppSettings
     public ClipSource ClipSource { get; set; } = ClipSource.ExportedFiles;
 
     /// <summary>
-    /// Longest clip to process, in seconds. Steam writes an untouched clip at exactly the
-    /// recording buffer length, so anything shorter is one the user actually cropped. The
-    /// buffer is a Steam setting rather than a fixed value, hence configurable here; the
-    /// comparison is strict, so leaving this at the buffer length excludes untouched clips
-    /// without needing a tolerance.
+    /// Clips shorter than this many seconds are included; a clip of exactly this length is not.
+    /// Steam writes an untouched clip at exactly the recording buffer length, so anything
+    /// shorter is one the user actually cropped. The buffer is a Steam setting rather than a
+    /// fixed value, hence configurable here; the comparison is strict, so leaving this at the
+    /// buffer length excludes untouched clips without needing a tolerance.
     /// </summary>
     public int MaxClipSeconds { get; set; } = 120;
 

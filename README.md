@@ -64,9 +64,10 @@ real title possible.
 Point **Input** at your Steam recording folder, or at its `clips` subfolder; either works.
 
 Clips still at the full recording buffer are skipped, because an untouched clip spans whole
-rounds and has no single moment worth uploading. Steam writes one at *exactly* the buffer
-length, so **Longest clip to process** excludes them with no tolerance needed — set it to the
-buffer length configured in Steam.
+rounds and has no single moment worth uploading. **Include clips shorter than** is that cut:
+only clips shorter than it are processed, and a clip of exactly that length is left out. Steam
+writes an untouched clip at *exactly* the buffer length, so setting this to the buffer length
+configured in Steam excludes them with no tolerance needed.
 
 Clips already handled are listed greyed out rather than hidden, so Steam's clip list can be
 left alone instead of deleting clips there to avoid uploading the same highlight twice.
@@ -80,6 +81,26 @@ committing. For a Steam clip it uses the thumbnail Steam already wrote, so it is
 Originals move to `<input>/processed/`. If YouTube upload is on, uploaded clips move to
 `<output>/uploaded/` — they are kept, not deleted, so you can still play them locally.
 Steam's own clip folders are only ever read; nothing is written back into them.
+
+### Stitching clips together
+
+Tick **Stitch into one video** and the checked clips become a single compilation instead of one
+file each. It works from either source: Steam clips are remuxed into parts first, exported files
+go straight in. Clips are ordered oldest first, and the description gets a timestamp per clip —
+which YouTube shows as chapters when there are at least three and each runs 10 seconds or more.
+
+The join is still lossless. The DASH chunks cannot simply be concatenated across clips — each
+clip's init segment carries its own decoder configuration — so FFmpeg's concat demuxer does it
+with `-c copy`, and the result is checked byte for byte: the compilation's video payload must
+equal the parts' payloads concatenated, or the output is discarded. Parts that do not match the
+first clip's codec, size, pixel format, pixel aspect, colour or audio track count are left out
+rather than re-encoded to fit, and the log says which and why.
+
+Every clip that goes into a compilation is recorded as remuxed, and as uploaded once the
+compilation reaches YouTube, so it greys out and will not be swept into a second one. To upload
+one of them on its own afterwards, remove its entry from the processed-clip log.
+
+The toggle is deliberately not saved: it resets each time the app starts.
 
 ## CLI
 
@@ -143,7 +164,7 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
-tests/                       201 tests, no ffmpeg or GPU needed
+tests/                       247 tests, no ffmpeg or GPU needed
 ```
 
 `Core/Steam/` reads what Steam writes beside a clip: `clip.pb` through a small protobuf

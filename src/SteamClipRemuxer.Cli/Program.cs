@@ -62,9 +62,10 @@ public static class Program
     private static (BatchService batch, RemuxService remux) BuildServices(IPipelineLog log, string ffmpeg, string ffprobe)
     {
         var runner = new ProcessRunner();
-        var remux = new RemuxService(
-            new MediaProbe(runner, ffprobe), runner, new VideoStreamHasher(runner, ffmpeg), log, ffmpeg);
-        return (new BatchService(remux, log), remux);
+        var probe = new MediaProbe(runner, ffprobe);
+        var remux = new RemuxService(probe, runner, new VideoStreamHasher(runner, ffmpeg), log, ffmpeg);
+        var stitch = new ClipStitchService(runner, probe, log, ffmpeg);
+        return (new BatchService(remux, stitch, log), remux);
     }
 
     private static async Task<int> RemuxAsync(Options o, bool upload, CancellationToken ct)

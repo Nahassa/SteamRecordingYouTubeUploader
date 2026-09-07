@@ -80,10 +80,12 @@ public sealed class SettingsForm : Form
             + "configure for quality. Output is bit-identical to the recording."));
 
         layout.Controls.Add(Header("Steam clips"));
-        layout.Controls.Add(Row("Longest clip to process (s):", _maxClipSeconds));
+        layout.Controls.Add(Row("Include clips shorter than (s):", _maxClipSeconds));
         layout.Controls.Add(Note(
-            "Steam writes an untouched clip at exactly the recording buffer length, so anything "
-            + "shorter is one you cropped yourself. Match this to the buffer length set in Steam."));
+            "Only clips shorter than this are included; a clip of exactly this length is left "
+            + "out. Steam writes an untouched clip at exactly the recording buffer length, so "
+            + "set this to the buffer length configured in Steam (120 by default) and every "
+            + "untouched clip is excluded while anything you cropped is kept."));
         layout.Controls.Add(_respectCrop);
         layout.Controls.Add(Note(
             "Steam's crop point usually falls mid-GOP, so the cut lands on the nearest earlier "

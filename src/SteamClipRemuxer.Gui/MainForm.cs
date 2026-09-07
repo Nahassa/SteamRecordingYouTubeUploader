@@ -61,6 +61,19 @@ public sealed class MainForm : Form
         Width = 190,
         Height = 30,
     };
+
+    /// <summary>
+    /// Joins the checked clips into one file. Deliberately not a saved setting: a compilation
+    /// should be something you ask for, not something the app quietly keeps doing.
+    /// </summary>
+    private readonly CheckBox _stitch = new()
+    {
+        Text = "Stitch into one video",
+        AutoSize = true,
+        Height = 30,
+        Padding = new Padding(8, 6, 0, 0),
+    };
+
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Black };
     private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 68, Padding = new Padding(6) };
 
@@ -85,13 +98,19 @@ public sealed class MainForm : Form
         var remuxService = new RemuxService(
             _probe, _runner, new VideoStreamHasher(_runner),
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
-        _batch = new BatchService(remuxService,
+
+        // Shared by both sources: the join only ever sees finished files, whichever produced them.
+        var stitchService = new ClipStitchService(
+            _runner, _probe,
+            new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+
+        _batch = new BatchService(remuxService, stitchService,
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
 
         var clipRemuxService = new ClipRemuxService(
             _runner, _probe, new VideoStreamHasher(_runner),
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
-        _clipBatch = new ClipBatchService(clipRemuxService,
+        _clipBatch = new ClipBatchService(clipRemuxService, stitchService,
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
 
         _processed = ProcessedClipLog.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
@@ -155,6 +174,10 @@ public sealed class MainForm : Form
         };
 
         _remux.Click += async (_, _) => await RunBatchAsync().ConfigureAwait(true);
+
+        // The button says what pressing it will do, since the two outcomes are very different.
+        _stitch.CheckedChanged += (_, _) =>
+            _remux.Text = _stitch.Checked ? "Stitch Selected" : "Remux Selected";
         _cancel.Click += (_, _) => _cancellation?.Cancel();
         _selectAll.Click += (_, _) => ToggleAll();
 
@@ -192,6 +215,7 @@ public sealed class MainForm : Form
             _remux, _cancel, _selectAll, reload,
             new Label { Text = "Source:", Width = 52, Height = 30, TextAlign = ContentAlignment.MiddleRight },
             _source,
+            _stitch,
             settings, timelines, showLog,
         });
 
@@ -515,6 +539,13 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (_stitch.Checked && selected.Count < 2)
+        {
+            MessageBox.Show(this, "Select at least two clips to stitch together.",
+                "Not enough clips", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_outputFolder.Text))
         {
             MessageBox.Show(this, "Choose an output folder first.", "Output folder required",
@@ -553,13 +584,21 @@ public sealed class MainForm : Form
 
         try
         {
-            IReadOnlyList<ClipOutcome> outcomes = _settings.ClipSource == ClipSource.SteamClips
-                ? await _clipBatch
+            IReadOnlyList<ClipOutcome> outcomes = (_settings.ClipSource, _stitch.Checked) switch
+            {
+                (ClipSource.SteamClips, true) => await _clipBatch
+                    .RunStitchAsync(selectedClips, _settings, _processed, _youtube, progress, _cancellation.Token)
+                    .ConfigureAwait(true),
+                (ClipSource.SteamClips, false) => await _clipBatch
                     .RunAsync(selectedClips, _settings, _processed, _youtube, progress, _cancellation.Token)
-                    .ConfigureAwait(true)
-                : await _batch
+                    .ConfigureAwait(true),
+                (_, true) => await _batch
+                    .RunStitchAsync(selected, _settings, _youtube, progress, _cancellation.Token)
+                    .ConfigureAwait(true),
+                _ => await _batch
                     .RunAsync(selected, _settings, _youtube, progress, _cancellation.Token)
-                    .ConfigureAwait(true);
+                    .ConfigureAwait(true),
+            };
 
             int failed = outcomes.Count(o => !o.Succeeded);
             SetStatus(failed == 0 ? "Finished." : $"Finished with {failed} failure(s).");
@@ -587,6 +626,7 @@ public sealed class MainForm : Form
     {
         _remux.Enabled = !busy;
         _selectAll.Enabled = !busy;
+        _stitch.Enabled = !busy;
         _cancel.Enabled = busy;
         UseWaitCursor = busy;
     }
@@ -599,8 +639,35 @@ public sealed class MainForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
         _settings.Save(onError: m => Log(LogLevel.Warning, m));
-        _ = ShowPreviewAsync();          // the target aspect may have changed
+
+        // Rebuild the list rather than only refreshing the preview. Each row caches the game
+        // name, the file name it would be given and the decision that it is short enough to
+        // process, all taken when the list was built - so leaving the rows alone makes a
+        // settings change look like it was ignored until the app is restarted.
+        ReloadKeepingSelection();
+
+        // Setting the selection to a row that is already selected raises no event, so the
+        // preview would otherwise keep the old target aspect.
+        _ = ShowPreviewAsync();
     }
+
+    /// <summary>Reloads the list without losing which rows were ticked.</summary>
+    private void ReloadKeepingSelection()
+    {
+        var wasChecked = new HashSet<string>(
+            _clips.CheckedItems.Cast<ClipEntry>().Select(KeyOf), StringComparer.Ordinal);
+
+        LoadClips();
+
+        for (int i = 0; i < _clips.Items.Count; i++)
+        {
+            if (_clips.Items[i] is ClipEntry entry)
+                _clips.SetItemChecked(i, wasChecked.Contains(KeyOf(entry)));
+        }
+    }
+
+    /// <summary>What identifies a row across a reload: the clip's own identity where it has one.</summary>
+    private static string KeyOf(ClipEntry entry) => entry.Listing?.Clip.Manifest.Id ?? entry.Path;
 
     private void FixTimelines()
     {

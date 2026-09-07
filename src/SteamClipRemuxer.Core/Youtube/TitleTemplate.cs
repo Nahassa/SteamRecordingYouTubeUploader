@@ -15,6 +15,12 @@ public static class TitleTemplate
     /// </summary>
     public const string DefaultClipTitle = "{game} - {highlight_full}";
 
+    /// <summary>
+    /// Default for a compilation. There is no one highlight to name, so the title says what the
+    /// video is; the individual plays are named in the timestamp list in the description.
+    /// </summary>
+    public const string DefaultCompilationTitle = "{game} - {count} clip compilation";
+
     public static string Expand(
         string template,
         string filePath,
@@ -23,7 +29,8 @@ public static class TitleTemplate
         DateTime? now = null,
         Highlights.Highlight? highlight = null,
         DateTimeOffset? recordedAt = null,
-        string? game = null)
+        string? game = null,
+        int? count = null)
     {
         DateTime timestamp = now ?? DateTime.Now;
         string stem = Path.GetFileNameWithoutExtension(filePath);
@@ -53,6 +60,8 @@ public static class TitleTemplate
             .Replace("{game}", game ?? clip.Game)
             .Replace("{recording_date}", recordingDate)
             .Replace("{recording_time}", recordingTime)
+            // Only a compilation has a count; elsewhere it collapses away with its separators.
+            .Replace("{count}", count?.ToString(CultureInfo.InvariantCulture) ?? "")
             .Replace("{date}", timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             .Replace("{time}", timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture))
             .Replace("{datetime}", timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
