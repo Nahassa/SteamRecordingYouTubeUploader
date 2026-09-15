@@ -67,7 +67,9 @@ Clips still at the full recording buffer are skipped, because an untouched clip 
 rounds and has no single moment worth uploading. **Include clips shorter than** is that cut:
 only clips shorter than it are processed, and a clip of exactly that length is left out. Steam
 writes an untouched clip at *exactly* the buffer length, so setting this to the buffer length
-configured in Steam excludes them with no tolerance needed.
+configured in Steam excludes them with no tolerance needed. **Also list clips at or above the
+threshold** brings them back when you want them, which is what the kill-highlights cut below is
+for.
 
 Clips already handled are listed greyed out rather than hidden, so Steam's clip list can be
 left alone instead of deleting clips there to avoid uploading the same highlight twice.
@@ -101,6 +103,47 @@ compilation reaches YouTube, so it greys out and will not be swept into a second
 one of them on its own afterwards, remove its entry from the processed-clip log.
 
 The toggle is deliberately not saved: it resets each time the app starts.
+
+### Kill highlights
+
+Tick **Kill highlights only** and a clip is cut down to the fights in it, dropping everything
+between them. Steam clips only — the kill times come out of the clip's timeline, and an exported
+file does not have one, so the box is disabled for that source.
+
+Alongside it: **Stop before deaths** ends a run before you get killed rather than carrying past it,
+and **Min kills/round** keeps only rounds where that many of your kills are inside the clip. Both
+are per run. How much footage to keep either side of a kill lives in Settings, at 3 seconds each by
+default.
+
+**Three seconds is the finest cut, and that is not a setting.** Steam writes its recording as
+3-second DASH chunks with one keyframe at the start of each — measured at 4125.010, 4128.010 and
+4131.011 on the sample clip, one I-frame per 180-frame GOP. A chunk can be kept or dropped whole as
+a byte copy; cutting inside one would mean re-encoding. So each window snaps outward to chunk
+boundaries.
+
+Rounds are respected, because a clip is usually longer than a round: the competitive rounds
+measured here run 97–106 seconds against a 120-second buffer, so a clip left at the full buffer
+almost always spans a boundary. A run is clamped at the round it belongs to, and two runs either
+side of a boundary are never merged — otherwise the round-end screen and the next round's buy time
+end up in the middle of the reel. Chapters name the round: `0:00  Round 20 - Double kill with the
+AK-47`.
+
+Because this only ever sees the chunks inside the clip, it condenses a clip you saved; it cannot
+mine a whole session. It also only knows what Steam wrote down — no video is analysed, so a kill
+Steam did not log is a kill this does not find. In deathmatch there are no real rounds (one measured
+session reports five "rounds" holding 117 and 302 kills), so the per-round threshold passes
+everything there.
+
+Untouched clips are where this pays off most, and they are exactly what the duration threshold
+hides — so Settings has **Also list clips at or above the threshold** to bring them back.
+
+The cut selects chunks rather than asking FFmpeg to seek, and the difference is not cosmetic. On
+the sample, `-ss 6 -t 3` wrote 360 packets for a 180-frame window and hid the excess behind an edit
+list; the concat demuxer discards edit lists, so that skipped footage reappears in the reel with
+colliding timestamps. Selecting chunk 3 writes 180 packets and shows 180 frames. Cutting a real
+clip to two fights and joining them gives 360 packets, 360 frames, monotonic timestamps, and a
+video payload md5 of `bbfeb9cb94f6236423a78e01992eed3d` — identical to the two chunks' payloads
+concatenated.
 
 ## CLI
 
@@ -164,7 +207,7 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
-tests/                       247 tests, no ffmpeg or GPU needed
+tests/                       280 tests, no ffmpeg or GPU needed
 ```
 
 `Core/Steam/` reads what Steam writes beside a clip: `clip.pb` through a small protobuf

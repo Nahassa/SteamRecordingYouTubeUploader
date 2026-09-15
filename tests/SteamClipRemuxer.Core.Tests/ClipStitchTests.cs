@@ -658,7 +658,8 @@ public class StitchBatchTests : IDisposable
         var probe = new StitchFakes.Probe(path => StitchFakes.Media(path));
         var service = new ClipBatchService(
             new ClipRemuxService(runner, probe, new AlwaysSameHasher()),
-            new ClipStitchService(runner, probe));
+            new ClipStitchService(runner, probe),
+            new ClipHighlightService(runner, probe, new AlwaysSameHasher()));
 
         IReadOnlyList<ClipOutcome> outcomes =
             await service.RunStitchAsync(listings, settings, processed);
@@ -695,7 +696,8 @@ public class StitchBatchTests : IDisposable
         var probe = new StitchFakes.Probe(path => StitchFakes.Media(path));
         var service = new ClipBatchService(
             new ClipRemuxService(runner, probe, new AlwaysSameHasher()),
-            new ClipStitchService(runner, probe));
+            new ClipStitchService(runner, probe),
+            new ClipHighlightService(runner, probe, new AlwaysSameHasher()));
 
         IReadOnlyList<ClipOutcome> outcomes =
             await service.RunStitchAsync(listings, settings, processed);
@@ -722,7 +724,8 @@ public class StitchBatchTests : IDisposable
         var probe = new StitchFakes.Probe(path => StitchFakes.Media(path));
         var service = new ClipBatchService(
             new ClipRemuxService(runner, probe, new AlwaysSameHasher()),
-            new ClipStitchService(runner, probe));
+            new ClipStitchService(runner, probe),
+            new ClipHighlightService(runner, probe, new AlwaysSameHasher()));
 
         ClipOutcome outcome = Assert.Single(
             await service.RunStitchAsync(listings, settings, processed));

@@ -62,14 +62,43 @@ public static class DashSegments
     /// FFmpeg can then read as an ordinary fragmented MP4. Pure concatenation: no bytes of the
     /// encoded stream are altered, which is what keeps the whole pipeline lossless.
     /// </summary>
-    public static async Task<string> AssembleAsync(
-        string videoFolder, int stream, string destination, CancellationToken ct = default)
+    public static Task<string> AssembleAsync(
+        string videoFolder, int stream, string destination, CancellationToken ct = default) =>
+        AssembleRangeAsync(videoFolder, stream, 1, int.MaxValue, destination, ct);
+
+    /// <summary>
+    /// The same, for a run of consecutive segments rather than all of them, numbered from 1 as
+    /// Steam numbers them and inclusive at both ends.
+    ///
+    /// This is what makes cutting a clip down to its fights lossless. Every segment begins with a
+    /// keyframe - Steam declares startWithSAP="1" and it measures true - so a segment can be kept
+    /// or dropped whole, and what comes out is still a byte copy of what Steam recorded.
+    /// </summary>
+    public static async Task<string> AssembleRangeAsync(
+        string videoFolder,
+        int stream,
+        int firstIndex,
+        int lastIndex,
+        string destination,
+        CancellationToken ct = default)
     {
         string init = InitPath(videoFolder, stream);
         if (!File.Exists(init)) throw new FileNotFoundException($"No init segment for stream {stream}.", init);
 
-        IReadOnlyList<string> chunks = Chunks(videoFolder, stream);
-        if (chunks.Count == 0) throw new FileNotFoundException($"No media segments for stream {stream}.", videoFolder);
+        IReadOnlyList<string> all = Chunks(videoFolder, stream);
+        if (all.Count == 0) throw new FileNotFoundException($"No media segments for stream {stream}.", videoFolder);
+
+        int from = Math.Max(1, firstIndex);
+        int to = Math.Min(all.Count, lastIndex);
+
+        if (to < from)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(firstIndex),
+                $"Segments {firstIndex}-{lastIndex} do not exist; stream {stream} has {all.Count}.");
+        }
+
+        List<string> chunks = all.Skip(from - 1).Take(to - from + 1).ToList();
 
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
 

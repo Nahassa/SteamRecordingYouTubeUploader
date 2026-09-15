@@ -57,12 +57,18 @@ public sealed class ClipBatchService
 {
     private readonly ClipRemuxService _remux;
     private readonly ClipStitchService _stitch;
+    private readonly ClipHighlightService _highlights;
     private readonly IPipelineLog _log;
 
-    public ClipBatchService(ClipRemuxService remux, ClipStitchService stitch, IPipelineLog? log = null)
+    public ClipBatchService(
+        ClipRemuxService remux,
+        ClipStitchService stitch,
+        ClipHighlightService highlights,
+        IPipelineLog? log = null)
     {
         _remux = remux;
         _stitch = stitch;
+        _highlights = highlights;
         _log = log ?? NullPipelineLog.Instance;
     }
 
@@ -87,7 +93,7 @@ public sealed class ClipBatchService
 
         foreach (ClipFolder clip in folders)
         {
-            if (!clip.Manifest.IsCropped(buffer))
+            if (!settings.IncludeLongClips && !clip.Manifest.IsCropped(buffer))
             {
                 skipped++;
                 continue;
@@ -120,7 +126,8 @@ public sealed class ClipBatchService
         {
             log.Info(
                 $"{skipped} clip(s) were not shorter than {settings.MaxClipSeconds}s, so they were "
-                + "left out; crop a clip in Steam to include it.");
+                + "left out; crop a clip in Steam, or turn on 'Also list clips at or above the "
+                + "threshold' to keep them.");
         }
 
         return listings;
@@ -549,6 +556,185 @@ public sealed class ClipBatchService
         return string.IsNullOrWhiteSpace(description)
             ? chapters
             : description + Environment.NewLine + Environment.NewLine + chapters;
+    }
+
+    /// <summary>
+    /// Cuts each clip down to the fights in it and joins what is left.
+    ///
+    /// Only Steam's own clip folders can go through this: the kill times come from the clip's
+    /// timeline, and an exported file does not have one.
+    ///
+    /// With <paramref name="joinAcrossClips"/> the result is one reel covering every selected
+    /// clip; without it, one reel per clip. Either way the clips that contributed are recorded as
+    /// processed, the same bargain the compilation path makes.
+    /// </summary>
+    public async Task<IReadOnlyList<ClipOutcome>> RunHighlightsAsync(
+        IReadOnlyList<ClipListing> clips,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        HighlightWindowOptions windowOptions,
+        bool joinAcrossClips = false,
+        YouTubeClient? youtube = null,
+        IProgress<BatchProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var options = new RemuxOptions
+        {
+            TargetDisplayAspect = settings.ParsedTargetAspect,
+            FastStart = settings.FastStart,
+        };
+
+        bool uploading = settings.EnableYouTubeUpload && youtube is { IsAuthenticated: true };
+
+        List<ClipListing> ordered = clips
+            .Where(c => !settings.SkipAlreadyProcessed
+                || !processed.ShouldSkip(c.Clip.Manifest.Id, uploading))
+            .OrderBy(c => c.RecordedAt)
+            .ToList();
+
+        int alreadyDone = clips.Count - ordered.Count;
+        if (alreadyDone > 0) _log.Info($"{alreadyDone} clip(s) already done were left out.");
+
+        if (ordered.Count == 0)
+        {
+            const string message = "Every selected clip has already been processed.";
+            _log.Error(message);
+            return new[] { new ClipOutcome
+            {
+                InputPath = clips.FirstOrDefault()?.Clip.Path ?? string.Empty,
+                Error = message,
+            } };
+        }
+
+        string workspace = Path.Combine(
+            Path.GetTempPath(), "sclip-highlights-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var cuts = new List<(ClipListing Listing, IReadOnlyList<StitchInput> Parts)>();
+
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                ClipListing listing = ordered[i];
+                progress?.Report(new BatchProgress(i, ordered.Count, listing.SuggestedName));
+                _log.Info($"[{i + 1}/{ordered.Count}] {listing.SuggestedName}");
+
+                try
+                {
+                    ClipHighlightResult cut = await _highlights
+                        .CutAsync(listing.Clip, Path.Combine(workspace, $"clip{i:00}"),
+                            options, windowOptions, ct)
+                        .ConfigureAwait(false);
+
+                    if (cut.Parts.Count == 0)
+                    {
+                        // Not a failure: a clip with no qualifying fight simply has nothing to
+                        // show, and saying which rule dropped it beats an unexplained absence.
+                        _log.Warning($"  nothing kept - {cut.Nothing}.");
+                        continue;
+                    }
+
+                    cuts.Add((listing, cut.Parts));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _log.Error($"  {ex.Message}");
+                }
+            }
+
+            if (cuts.Count == 0)
+            {
+                const string message = "No clip held a fight worth keeping.";
+                _log.Error(message);
+                return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = message } };
+            }
+
+            if (joinAcrossClips)
+            {
+                ClipListing first = cuts[0].Listing;
+                return new[] { await AssembleReelAsync(
+                    cuts.SelectMany(c => c.Parts).ToList(),
+                    cuts.Select(c => c.Listing).ToList(),
+                    kept => ClipNaming.Expand(
+                        ClipNaming.DefaultCompilationTemplate,
+                        first.GameName, first.RecordedAt, highlight: null, count: cuts.Count),
+                    settings, processed, uploading ? youtube : null, options, ct)
+                    .ConfigureAwait(false) };
+            }
+
+            var outcomes = new List<ClipOutcome>();
+            foreach ((ClipListing listing, IReadOnlyList<StitchInput> parts) in cuts)
+            {
+                outcomes.Add(await AssembleReelAsync(
+                        parts, new[] { listing },
+                        _ => ClipNaming.Sanitise(listing.SuggestedName + " - Highlights"),
+                        settings, processed, uploading ? youtube : null, options, ct)
+                    .ConfigureAwait(false));
+            }
+
+            return outcomes;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"  {ex.Message}");
+            return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = ex.Message } };
+        }
+        finally
+        {
+            progress?.Report(new BatchProgress(ordered.Count, ordered.Count, string.Empty));
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>
+    /// Turns the cut pieces into one finished file. One piece is adopted as it stands; more than
+    /// one goes through the join, which verifies the result byte for byte.
+    /// </summary>
+    private async Task<ClipOutcome> AssembleReelAsync(
+        IReadOnlyList<StitchInput> parts,
+        IReadOnlyList<ClipListing> included,
+        Func<int, string> name,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        YouTubeClient? youtube,
+        RemuxOptions options,
+        CancellationToken ct)
+    {
+        try
+        {
+            ClipStitchResult reel = parts.Count == 1
+                ? await _stitch.AdoptAsync(parts[0], settings.OutputFolder, name, options, ct)
+                    .ConfigureAwait(false)
+                : await _stitch.StitchAsync(parts, settings.OutputFolder, name, options, ct)
+                    .ConfigureAwait(false);
+
+            TimeSpan kept = reel.Parts[^1].StartsAt + reel.Parts[^1].Duration;
+            _log.Success(
+                $"  {Path.GetFileName(reel.OutputPath)} ({reel.Parts.Count} fight(s), "
+                + $"{kept.TotalSeconds:0.#}s kept, video copied)");
+
+            return await PublishAsync(reel, included, settings, processed, youtube, ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"  {ex.Message}");
+            return new ClipOutcome { InputPath = included[0].Clip.Path, Error = ex.Message };
+        }
     }
 
     private static void TryDeleteDirectory(string path)

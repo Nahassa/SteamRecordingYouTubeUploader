@@ -74,6 +74,38 @@ public sealed class MainForm : Form
         Padding = new Padding(8, 6, 0, 0),
     };
 
+    /// <summary>
+    /// Cuts each clip down to the fights in it. Steam clips only: the kill times come out of the
+    /// clip's timeline, and an exported file does not have one.
+    /// </summary>
+    private readonly CheckBox _highlights = new()
+    {
+        Text = "Kill highlights only",
+        AutoSize = true,
+        Height = 30,
+        Padding = new Padding(8, 6, 0, 0),
+    };
+
+    private readonly CheckBox _skipDeaths = new()
+    {
+        Text = "Stop before deaths",
+        AutoSize = true,
+        Height = 30,
+        Padding = new Padding(8, 6, 0, 0),
+    };
+
+    private readonly ToolTip _tips = new();
+
+    private readonly NumericUpDown _minKills = new()
+    {
+        Width = 46, Minimum = 1, Maximum = 5, Value = 1,
+    };
+
+    private readonly Label _minKillsLabel = new()
+    {
+        Text = "Min kills/round:", AutoSize = true, Height = 30, Padding = new Padding(8, 7, 0, 0),
+    };
+
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Black };
     private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 68, Padding = new Padding(6) };
 
@@ -110,7 +142,11 @@ public sealed class MainForm : Form
         var clipRemuxService = new ClipRemuxService(
             _runner, _probe, new VideoStreamHasher(_runner),
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
-        _clipBatch = new ClipBatchService(clipRemuxService, stitchService,
+        var highlightService = new ClipHighlightService(
+            _runner, _probe, new VideoStreamHasher(_runner),
+            new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+
+        _clipBatch = new ClipBatchService(clipRemuxService, stitchService, highlightService,
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
 
         _processed = ProcessedClipLog.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
@@ -175,9 +211,8 @@ public sealed class MainForm : Form
 
         _remux.Click += async (_, _) => await RunBatchAsync().ConfigureAwait(true);
 
-        // The button says what pressing it will do, since the two outcomes are very different.
-        _stitch.CheckedChanged += (_, _) =>
-            _remux.Text = _stitch.Checked ? "Stitch Selected" : "Remux Selected";
+        _stitch.CheckedChanged += (_, _) => UpdateModeControls();
+        _highlights.CheckedChanged += (_, _) => UpdateModeControls();
         _cancel.Click += (_, _) => _cancellation?.Cancel();
         _selectAll.Click += (_, _) => ToggleAll();
 
@@ -198,6 +233,7 @@ public sealed class MainForm : Form
 
             _settings.ClipSource = choice.Value;
             _settings.Save(onError: m => Log(LogLevel.Warning, m));
+            UpdateModeControls();
             LoadClips();
         };
 
@@ -215,7 +251,7 @@ public sealed class MainForm : Form
             _remux, _cancel, _selectAll, reload,
             new Label { Text = "Source:", Width = 52, Height = 30, TextAlign = ContentAlignment.MiddleRight },
             _source,
-            _stitch,
+            _stitch, _highlights, _skipDeaths, _minKillsLabel, _minKills,
             settings, timelines, showLog,
         });
 
@@ -251,6 +287,7 @@ public sealed class MainForm : Form
         _inputFolder.Text = _settings.InputFolder;
         _outputFolder.Text = _settings.OutputFolder;
         SelectSource(_settings.ClipSource);
+        UpdateModeControls();
         if (Directory.Exists(_inputFolder.Text)) LoadClips();
     }
 
@@ -539,7 +576,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (_stitch.Checked && selected.Count < 2)
+        if (_stitch.Checked && !_highlights.Checked && selected.Count < 2)
         {
             MessageBox.Show(this, "Select at least two clips to stitch together.",
                 "Not enough clips", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -586,6 +623,11 @@ public sealed class MainForm : Form
         {
             IReadOnlyList<ClipOutcome> outcomes = (_settings.ClipSource, _stitch.Checked) switch
             {
+                // Highlights read the clip's timeline, so they exist only on the Steam-clip path.
+                (ClipSource.SteamClips, _) when _highlights.Checked => await _clipBatch
+                    .RunHighlightsAsync(selectedClips, _settings, _processed, WindowOptions(),
+                        _stitch.Checked, _youtube, progress, _cancellation.Token)
+                    .ConfigureAwait(true),
                 (ClipSource.SteamClips, true) => await _clipBatch
                     .RunStitchAsync(selectedClips, _settings, _processed, _youtube, progress, _cancellation.Token)
                     .ConfigureAwait(true),
@@ -622,11 +664,53 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>How much to keep around each fight, from the settings plus the per-run choices.</summary>
+    private HighlightWindowOptions WindowOptions() => new()
+    {
+        Lead = TimeSpan.FromSeconds(Math.Max(0, _settings.HighlightLeadSeconds)),
+        Tail = TimeSpan.FromSeconds(Math.Max(0, _settings.HighlightTailSeconds)),
+        MinimumKillsPerRound = (int)_minKills.Value,
+        StopBeforeDeaths = _skipDeaths.Checked,
+    };
+
+    /// <summary>
+    /// Keeps the per-run controls honest about what is available. Highlights need a timeline, so
+    /// they are offered for Steam's clip folders and nothing else, and the button says which of
+    /// the four combinations is about to run.
+    /// </summary>
+    private void UpdateModeControls()
+    {
+        bool steamClips = _settings.ClipSource == ClipSource.SteamClips;
+
+        if (!steamClips && _highlights.Checked) _highlights.Checked = false;
+        _highlights.Enabled = steamClips;
+
+        bool cutting = steamClips && _highlights.Checked;
+        _skipDeaths.Enabled = cutting;
+        _minKills.Enabled = cutting;
+        _minKillsLabel.Enabled = cutting;
+
+        _remux.Text = (cutting, _stitch.Checked) switch
+        {
+            (true, true) => "Cut && Join",
+            (true, false) => "Cut Highlights",
+            (false, true) => "Stitch Selected",
+            _ => "Remux Selected",
+        };
+
+        _tips.SetToolTip(_highlights, steamClips
+            ? "Keep only the chunks around your kills."
+            : "Only Steam clips carry the timeline that says where your kills are.");
+    }
+
     private void SetBusy(bool busy)
     {
         _remux.Enabled = !busy;
         _selectAll.Enabled = !busy;
         _stitch.Enabled = !busy;
+        _highlights.Enabled = !busy && _settings.ClipSource == ClipSource.SteamClips;
+        _skipDeaths.Enabled = !busy && _highlights.Checked;
+        _minKills.Enabled = !busy && _highlights.Checked;
         _cancel.Enabled = busy;
         UseWaitCursor = busy;
     }

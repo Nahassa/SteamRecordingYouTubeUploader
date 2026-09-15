@@ -290,6 +290,55 @@ public sealed class ClipStitchService
     }
 
     /// <summary>
+    /// Puts a single finished part in place as the output, for when there is nothing to join.
+    ///
+    /// A clip that yielded one fight is a perfectly good result; it just does not go through the
+    /// concat demuxer, because joining one file to nothing is not a thing FFmpeg does.
+    /// </summary>
+    public async Task<ClipStitchResult> AdoptAsync(
+        StitchInput part,
+        string outputDirectory,
+        Func<int, string> outputFileName,
+        RemuxOptions? options = null,
+        CancellationToken ct = default)
+    {
+        options ??= new RemuxOptions();
+        var stopwatch = Stopwatch.StartNew();
+
+        Directory.CreateDirectory(outputDirectory);
+
+        SourceMedia media = await _probe.ProbeAsync(part.Path, ct).ConfigureAwait(false);
+        string outputPath = Path.Combine(outputDirectory, outputFileName(1) + ".mp4");
+
+        if (RemuxService.IsSameFile(part.Path, outputPath))
+        {
+            throw new InvalidOperationException(
+                $"The output would be written over '{Path.GetFileName(part.Path)}'. "
+                + "Choose a different output folder.");
+        }
+
+        File.Move(part.Path, outputPath, overwrite: true);
+
+        return new ClipStitchResult
+        {
+            OutputPath = outputPath,
+            Parts = new[]
+            {
+                new StitchPart
+                {
+                    Path = part.Path,
+                    Label = part.Label,
+                    StartsAt = TimeSpan.Zero,
+                    Duration = TimeSpan.FromSeconds(media.DurationSeconds),
+                },
+            },
+            Excluded = Array.Empty<string>(),
+            AspectOverridden = media.DisplayAspect != options.TargetDisplayAspect,
+            Elapsed = stopwatch.Elapsed,
+        };
+    }
+
+    /// <summary>
     /// Splits the probed inputs into the ones that can be joined and the ones that cannot. The
     /// first input defines the compilation; dropping the odd one out beats failing the whole run
     /// or quietly re-encoding it to fit.

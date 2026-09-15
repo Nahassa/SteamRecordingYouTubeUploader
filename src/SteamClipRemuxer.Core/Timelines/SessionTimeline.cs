@@ -29,6 +29,9 @@ public sealed record TimelineEntry
 /// <c>ClipManifest.StartInSession</c> indexes into. One timeline covers the whole session -
 /// ninety minutes and several maps is normal - so it is only useful alongside a clip window.
 /// </summary>
+/// <summary>Where a round begins, and which round it is.</summary>
+public readonly record struct RoundStart(TimeSpan At, int Number);
+
 public sealed class SessionTimeline
 {
     public IReadOnlyList<TimelineEntry> Entries { get; }
@@ -60,17 +63,52 @@ public sealed class SessionTimeline
 
     public string? ModeAt(TimeSpan moment) => TagAt(moment, "Mode");
 
+    private const string RoundPrefix = "Start of round ";
+
+    /// <summary>
+    /// Where each round begins, oldest first.
+    ///
+    /// Needed because a clip is often longer than a round: the competitive rounds measured here
+    /// run 97-106 seconds against a 120 second recording buffer, so a clip left at the full
+    /// buffer usually spans a boundary. Cutting across one drags the round-end screen and the
+    /// next round's buy time into the output.
+    ///
+    /// Deathmatch has no real rounds - one measured session reports five of them holding 117 and
+    /// 302 kills - so callers must not assume this divides a session into comparable pieces.
+    /// </summary>
+    public IReadOnlyList<RoundStart> RoundStarts()
+    {
+        var starts = new List<RoundStart>();
+
+        foreach (TimelineEntry entry in Entries)
+        {
+            if (entry.Type != "event") continue;
+            if (!entry.Title.StartsWith(RoundPrefix, StringComparison.Ordinal)) continue;
+
+            if (int.TryParse(
+                    entry.Title[RoundPrefix.Length..], NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out int number))
+            {
+                starts.Add(new RoundStart(entry.Time, number));
+            }
+        }
+
+        starts.Sort((a, b) => a.At.CompareTo(b.At));
+        return starts;
+    }
+
     /// <summary>The round number in force at a moment, from the most recent "Start of round N".</summary>
     public int? RoundAt(TimeSpan moment)
     {
-        TimelineEntry? round = Entries
-            .Where(e => e.Type == "event" && e.Time <= moment && e.Title.StartsWith("Start of round ", StringComparison.Ordinal))
-            .LastOrDefault();
+        int? number = null;
 
-        if (round is null) return null;
+        foreach (RoundStart start in RoundStarts())
+        {
+            if (start.At > moment) break;
+            number = start.Number;
+        }
 
-        string tail = round.Title["Start of round ".Length..];
-        return int.TryParse(tail, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : null;
+        return number;
     }
 
     public static SessionTimeline Parse(string json)

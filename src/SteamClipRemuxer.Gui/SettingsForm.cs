@@ -19,6 +19,21 @@ public sealed class SettingsForm : Form
         Width = 80, Minimum = 1, Maximum = 3600, Increment = 5,
     };
 
+    private readonly CheckBox _includeLong = new()
+    {
+        Text = "Also list clips at or above the threshold", AutoSize = true,
+    };
+
+    private readonly NumericUpDown _highlightLead = new()
+    {
+        Width = 80, Minimum = 0, Maximum = 60, Increment = 3,
+    };
+
+    private readonly NumericUpDown _highlightTail = new()
+    {
+        Width = 80, Minimum = 0, Maximum = 60, Increment = 3,
+    };
+
     private readonly CheckBox _respectCrop = new()
     {
         Text = "Cut to the range cropped in Steam", AutoSize = true,
@@ -86,12 +101,23 @@ public sealed class SettingsForm : Form
             + "out. Steam writes an untouched clip at exactly the recording buffer length, so "
             + "set this to the buffer length configured in Steam (120 by default) and every "
             + "untouched clip is excluded while anything you cropped is kept."));
+        layout.Controls.Add(_includeLong);
+        layout.Controls.Add(Note(
+            "Brings the untouched clips back into the list. They are mostly footage you did not "
+            + "ask for, which is what 'Kill highlights only' on the main window is for."));
         layout.Controls.Add(_respectCrop);
         layout.Controls.Add(Note(
             "Steam's crop point usually falls mid-GOP, so the cut lands on the nearest earlier "
             + "keyframe. Either way the video is copied, never re-encoded; unticking keeps whole "
             + "segments and a little more footage than you cropped."));
         layout.Controls.Add(_skipProcessed);
+        layout.Controls.Add(Row("Keep before each kill (s):", _highlightLead));
+        layout.Controls.Add(Row("Keep after each kill (s):", _highlightTail));
+        layout.Controls.Add(Note(
+            "Used by 'Kill highlights only'. Both snap outward to Steam's three-second chunks: "
+            + "Steam writes one keyframe per chunk, so three seconds is the finest a lossless "
+            + "cut can manage."));
+
         layout.Controls.Add(Row("Clip file name:", _clipFileName));
         layout.Controls.Add(Note(
             "Placeholders: {game} {recording_date} {recording_time} {highlight} {highlight_full} "
@@ -176,6 +202,11 @@ public sealed class SettingsForm : Form
 
         _maxClipSeconds.Value = Math.Clamp(
             _settings.MaxClipSeconds, (int)_maxClipSeconds.Minimum, (int)_maxClipSeconds.Maximum);
+        _includeLong.Checked = _settings.IncludeLongClips;
+        _highlightLead.Value = Math.Clamp(
+            _settings.HighlightLeadSeconds, (int)_highlightLead.Minimum, (int)_highlightLead.Maximum);
+        _highlightTail.Value = Math.Clamp(
+            _settings.HighlightTailSeconds, (int)_highlightTail.Minimum, (int)_highlightTail.Maximum);
         _respectCrop.Checked = _settings.RespectSteamCrop;
         _skipProcessed.Checked = _settings.SkipAlreadyProcessed;
         _clipFileName.Text = _settings.ClipFileNameTemplate;
@@ -202,6 +233,9 @@ public sealed class SettingsForm : Form
         _settings.FastStart = _fastStart.Checked;
 
         _settings.MaxClipSeconds = (int)_maxClipSeconds.Value;
+        _settings.IncludeLongClips = _includeLong.Checked;
+        _settings.HighlightLeadSeconds = (int)_highlightLead.Value;
+        _settings.HighlightTailSeconds = (int)_highlightTail.Value;
         _settings.RespectSteamCrop = _respectCrop.Checked;
         _settings.SkipAlreadyProcessed = _skipProcessed.Checked;
         _settings.ClipFileNameTemplate = string.IsNullOrWhiteSpace(_clipFileName.Text)

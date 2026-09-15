@@ -33,6 +33,24 @@ public sealed class AppSettings
     public int MaxClipSeconds { get; set; } = 120;
 
     /// <summary>
+    /// Also list clips at or above <see cref="MaxClipSeconds"/>, instead of only those below it.
+    ///
+    /// Off, the threshold behaves as it always has. On, the clips left at the full recording
+    /// buffer come back into the list - which is what the kill-highlights cut is for, since an
+    /// untouched clip is mostly the footage that cut throws away.
+    /// </summary>
+    public bool IncludeLongClips { get; set; }
+
+    /// <summary>
+    /// Footage kept before the first kill of a fight, in seconds, when cutting a clip down to its
+    /// kills. Snaps outward to Steam's three-second chunks, which is the finest a copy can cut.
+    /// </summary>
+    public int HighlightLeadSeconds { get; set; } = 3;
+
+    /// <summary>Footage kept after the last kill of a fight, in seconds. Snaps outward as well.</summary>
+    public int HighlightTailSeconds { get; set; } = 3;
+
+    /// <summary>
     /// Cut the output down to the range cropped in Steam. Steam's crop point usually falls
     /// mid-GOP, so the cut lands on the nearest earlier keyframe: still a verbatim packet copy,
     /// never a re-encode, but up to a segment shorter than an exact frame cut would be.
