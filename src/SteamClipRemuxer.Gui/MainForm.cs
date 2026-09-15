@@ -195,7 +195,8 @@ public sealed class MainForm : Form
     private void BuildLayout()
     {
         Text = "Steam Clip Remuxer";
-        MinimumSize = new Size(820, 520);
+        // Wide enough for the widest bottom row (850px); see the budget where those rows are built.
+        MinimumSize = new Size(900, 520);
         RestoreGeometry();
 
         // --- folders -------------------------------------------------------
@@ -276,11 +277,27 @@ public sealed class MainForm : Form
         split.Panel2.Controls.Add(right);
 
         // --- actions --------------------------------------------------------
+        // AutoSize with no fixed Height, deliberately. These were one fixed-height panel, and
+        // when the row outgrew the window the overflow wrapped onto a second line that the
+        // height then clipped - taking Settings, Fix Timelines and Show Log off the window with
+        // no sign they were ever there. Growing is visible; clipping is not.
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 48,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Padding = new Padding(8, 8, 8, 8),
+            FlowDirection = FlowDirection.LeftToRight,
+        };
+
+        // The per-run choices sit on their own row above the buttons, which is what keeps each
+        // row inside the window's 900px minimum width.
+        var modes = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(8, 0, 8, 4),
             FlowDirection = FlowDirection.LeftToRight,
         };
 
@@ -321,13 +338,22 @@ public sealed class MainForm : Form
         var showLog = new Button { Text = "Show Log", Width = 100, Height = 30 };
         showLog.Click += (_, _) => ShowLog();
 
+        // Width budget, so the next control added here is spending something visible. Explicit
+        // widths plus the default 3px margin a side, plus the panel's own padding:
+        //   actions  140+90+100+90+100+110+100  -> 788px
+        //   modes     52+190+142+130+132+100+46 -> 850px
+        // Both inside the 900px minimum window width set in BuildLayout. Exceed it and the row
+        // wraps to a second line and the panel grows - visible, but no longer one clean row.
         actions.Controls.AddRange(new Control[]
         {
-            _remux, _cancel, _selectAll, reload,
+            _remux, _cancel, _selectAll, reload, settings, timelines, showLog,
+        });
+
+        modes.Controls.AddRange(new Control[]
+        {
             new Label { Text = "Source:", Width = 52, Height = 30, TextAlign = ContentAlignment.MiddleRight },
             _source,
             _stitch, _highlights, _skipDeaths, _minKillsLabel, _minKills,
-            settings, timelines, showLog,
         });
 
         // --- status ----------------------------------------------------------
@@ -336,12 +362,39 @@ public sealed class MainForm : Form
         statusBar.Controls.Add(_progress);
         _status.BringToFront();
 
+        // --- menu -------------------------------------------------------------
+        // A second route to the three actions that a crowded row can push off the window. The
+        // buttons stay; this is the one that cannot be hidden.
+        var menu = new MenuStrip();
+
+        var file = new ToolStripMenuItem("&File");
+        file.DropDownItems.Add("&Settings...", null, (_, _) => OpenSettings());
+        file.DropDownItems.Add(new ToolStripSeparator());
+        file.DropDownItems.Add("E&xit", null, (_, _) => Close());
+
+        var tools = new ToolStripMenuItem("&Tools");
+        tools.DropDownItems.Add("&Reload Clips", null, (_, _) => LoadClips());
+        tools.DropDownItems.Add("&Fix Timelines", null, (_, _) => FixTimelines());
+
+        var view = new ToolStripMenuItem("&View");
+        view.DropDownItems.Add("Show &Log", null, (_, _) => ShowLog());
+
+        menu.Items.AddRange(new ToolStripItem[] { file, tools, view });
+
         Controls.Add(split);
+
+        // Bottom docking is resolved from the highest index downward, so the row added later
+        // lands lower: modes first puts the toggles above the buttons they modify.
+        Controls.Add(modes);
         Controls.Add(actions);
         Controls.Add(statusBar);
         Controls.Add(folders);
         folders.BringToFront();
         split.BringToFront();   // Fill must be docked last, so it must sit at index 0
+
+        // Added last so it holds the highest index, docks first, and sits above the folder rows.
+        Controls.Add(menu);
+        MainMenuStrip = menu;
 
         // Safe only once the control has been sized. A saved distance wins: this used to run on
         // every show, so a dragged splitter survived until the next launch and was then reset.

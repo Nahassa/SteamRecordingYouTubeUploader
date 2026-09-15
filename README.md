@@ -92,6 +92,10 @@ The list has a column per status, ticked when it holds, and a filter for each ab
 | **M** | output missing — written, still waiting to upload, and no longer where the log says |
 | **H** | cut to highlights rather than kept whole |
 
+Settings, Fix Timelines and Show Log are on the menu bar as well as on buttons — **File →
+Settings…**, **Tools → Fix Timelines**, **View → Show Log** — so they stay reachable however
+crowded the button row gets.
+
 The window size and the divider between the list and the preview are remembered between
 sessions.
 
