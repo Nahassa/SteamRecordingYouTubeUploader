@@ -19,8 +19,16 @@ internal sealed class ClipEntry
     /// <summary>Set when the row came from one of Steam's clip folders rather than an exported file.</summary>
     public ClipListing? Listing { get; init; }
 
-    /// <summary>Already remuxed or uploaded, so the row is drawn greyed out.</summary>
+    /// <summary>Already remuxed or uploaded, so the row is greyed out.</summary>
     public bool IsProcessed => Listing is not null && Listing.State != ClipState.New;
+
+    /// <summary>
+    /// Whether the row is ticked. Held here rather than only on the list item, so hiding a row
+    /// behind a filter and bringing it back does not lose the choice.
+    /// </summary>
+    public bool Checked { get; set; }
+
+    public ClipStatus Status => Listing?.Status ?? ClipStatus.New;
 
     public override string ToString() =>
         Listing?.Describe() ?? System.IO.Path.GetFileName(Path);
@@ -44,16 +52,44 @@ public sealed class MainForm : Form
 
     private readonly TextBox _inputFolder = new() { Dock = DockStyle.Fill };
     private readonly TextBox _outputFolder = new() { Dock = DockStyle.Fill };
-    private readonly CheckedListBox _clips = new()
+    /// <summary>
+    /// Details view rather than a CheckedListBox, for two reasons: it has columns for the
+    /// per-clip status, and it ticks only when the box itself is clicked. A CheckedListBox with
+    /// CheckOnClick toggles wherever the row is clicked, so choosing a clip to preview and
+    /// choosing it for processing were the same gesture.
+    /// </summary>
+    private readonly ListView _clips = new()
     {
         Dock = DockStyle.Fill,
-        IntegralHeight = false,
-        CheckOnClick = true,
-        // Owner drawn so a clip already handled can be greyed out rather than hidden: a row that
-        // silently fails to appear is hard to tell from one the tool never found.
-        DrawMode = DrawMode.OwnerDrawFixed,
-        ItemHeight = 20,
+        View = View.Details,
+        CheckBoxes = true,
+        FullRowSelect = true,
+        HideSelection = false,
+        MultiSelect = false,
+        HeaderStyle = ColumnHeaderStyle.Nonclickable,
     };
+
+    /// <summary>Every row found on disk, including those a filter is currently hiding.</summary>
+    private readonly List<ClipEntry> _all = new();
+
+    /// <summary>True while the list is being rebuilt, so ItemChecked does not write back.</summary>
+    private bool _populating;
+
+    private readonly FlowLayoutPanel _filters = new()
+    {
+        Dock = DockStyle.Top,
+        Height = 28,
+        FlowDirection = FlowDirection.LeftToRight,
+        WrapContents = false,
+        Padding = new Padding(4, 4, 0, 0),
+    };
+
+    private readonly CheckBox _showNew = new() { Text = "New", AutoSize = true, Checked = true };
+    private readonly CheckBox _showRemuxed = new() { Text = "Remuxed", AutoSize = true, Checked = true };
+    private readonly CheckBox _showUploaded = new() { Text = "Uploaded", AutoSize = true, Checked = true };
+    private readonly CheckBox _showPending = new() { Text = "Pending upload", AutoSize = true, Checked = true };
+    private readonly CheckBox _showMissing = new() { Text = "Output missing", AutoSize = true, Checked = true };
+    private readonly CheckBox _showHighlights = new() { Text = "Highlights", AutoSize = true, Checked = true };
 
     private readonly ComboBox _source = new()
     {
@@ -159,9 +195,8 @@ public sealed class MainForm : Form
     private void BuildLayout()
     {
         Text = "Steam Clip Remuxer";
-        Size = new Size(1040, 660);
         MinimumSize = new Size(820, 520);
-        StartPosition = FormStartPosition.CenterScreen;
+        RestoreGeometry();
 
         // --- folders -------------------------------------------------------
         var folders = new TableLayoutPanel
@@ -190,14 +225,54 @@ public sealed class MainForm : Form
 
         // --- clips | preview -----------------------------------------------
         var split = new SplitContainer { Dock = DockStyle.Fill };
+
+        _clips.Columns.Add("Recorded", 120);
+        _clips.Columns.Add("Clip", 300);
+        _clips.Columns.Add("Length", 60, HorizontalAlignment.Right);
+        // One narrow column per status, ticked when it holds. Single letters because the width
+        // is worth more to the clip's name than to spelling out five headings.
+        _clips.Columns.Add("R", 26, HorizontalAlignment.Center);
+        _clips.Columns.Add("U", 26, HorizontalAlignment.Center);
+        _clips.Columns.Add("P", 26, HorizontalAlignment.Center);
+        _clips.Columns.Add("M", 26, HorizontalAlignment.Center);
+        _clips.Columns.Add("H", 26, HorizontalAlignment.Center);
+
+        _tips.SetToolTip(_clips,
+            "R remuxed - U uploaded - P pending upload - M output missing - H cut to highlights");
+
         _clips.SelectedIndexChanged += async (_, _) => await ShowPreviewAsync().ConfigureAwait(true);
-        split.Panel1.Controls.Add(_clips);
+        _clips.ItemChecked += (_, e) =>
+        {
+            if (_populating) return;
+            if (e.Item.Tag is ClipEntry entry) entry.Checked = e.Item.Checked;
+        };
+
+        foreach (CheckBox filter in new[]
+                 { _showNew, _showRemuxed, _showUploaded, _showPending, _showMissing, _showHighlights })
+        {
+            filter.Margin = new Padding(0, 3, 12, 0);
+            // Filtering works from the rows already read, so it never touches the disk.
+            filter.CheckedChanged += (_, _) => ApplyFilter();
+            _filters.Controls.Add(filter);
+        }
+
+        var left = new Panel { Dock = DockStyle.Fill };
+        left.Controls.Add(_clips);
+        left.Controls.Add(_filters);
+        _clips.BringToFront();
+        split.Panel1.Controls.Add(left);
 
         var right = new Panel { Dock = DockStyle.Fill };
         _clipInfo.Text = "Select a clip to preview it.";
-        right.Controls.Add(_preview);
+
+        // The preview sits in its own padded panel so the black letterbox is inset on all four
+        // sides rather than running into the window frame.
+        var previewFrame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8) };
+        previewFrame.Controls.Add(_preview);
+
+        right.Controls.Add(previewFrame);
         right.Controls.Add(_clipInfo);
-        _preview.BringToFront();
+        previewFrame.BringToFront();
         split.Panel2.Controls.Add(right);
 
         // --- actions --------------------------------------------------------
@@ -255,8 +330,6 @@ public sealed class MainForm : Form
             settings, timelines, showLog,
         });
 
-        _clips.DrawItem += DrawClipRow;
-
         // --- status ----------------------------------------------------------
         var statusBar = new Panel { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(8, 4, 8, 4) };
         statusBar.Controls.Add(_status);
@@ -270,14 +343,25 @@ public sealed class MainForm : Form
         folders.BringToFront();
         split.BringToFront();   // Fill must be docked last, so it must sit at index 0
 
-        // Safe only once the control has been sized.
+        // Safe only once the control has been sized. A saved distance wins: this used to run on
+        // every show, so a dragged splitter survived until the next launch and was then reset.
         Shown += (_, _) =>
         {
-            try { split.SplitterDistance = Math.Min(300, Math.Max(120, split.Width - 200)); }
-            catch (InvalidOperationException) { /* leave the default split */ }
+            int wanted = _settings.SplitterDistance > 0
+                ? _settings.SplitterDistance
+                : Math.Min(300, Math.Max(120, split.Width - 200));
+
+            try { split.SplitterDistance = wanted; }
+            catch (InvalidOperationException) { /* too narrow for it; leave the default */ }
         };
 
-        FormClosing += (_, _) => Persist();
+        split.SplitterMoved += (_, _) => _settings.SplitterDistance = split.SplitterDistance;
+
+        FormClosing += (_, _) =>
+        {
+            SaveGeometry();
+            Persist();
+        };
     }
 
     // ------------------------------------------------------------------ state
@@ -298,6 +382,53 @@ public sealed class MainForm : Form
         _settings.Save(onError: m => Log(LogLevel.Warning, m));
     }
 
+    /// <summary>
+    /// Puts the window back where it was. A saved position is only honoured while it still lands
+    /// on an attached screen - restoring onto a monitor that has since been unplugged leaves a
+    /// window that cannot be reached.
+    /// </summary>
+    private void RestoreGeometry()
+    {
+        var size = new Size(
+            _settings.WindowWidth > 0 ? _settings.WindowWidth : 1040,
+            _settings.WindowHeight > 0 ? _settings.WindowHeight : 660);
+
+        size = new Size(
+            Math.Max(size.Width, MinimumSize.Width),
+            Math.Max(size.Height, MinimumSize.Height));
+
+        var saved = new Rectangle(_settings.WindowLeft, _settings.WindowTop, size.Width, size.Height);
+
+        if ((_settings.WindowLeft != 0 || _settings.WindowTop != 0)
+            && Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(saved)))
+        {
+            StartPosition = FormStartPosition.Manual;
+            Bounds = saved;
+        }
+        else
+        {
+            StartPosition = FormStartPosition.CenterScreen;
+            Size = size;
+        }
+
+        if (_settings.WindowMaximized) WindowState = FormWindowState.Maximized;
+    }
+
+    /// <summary>
+    /// Records the window for next time. RestoreBounds rather than Bounds, so a maximized or
+    /// minimized window stores the size it will return to rather than the screen.
+    /// </summary>
+    private void SaveGeometry()
+    {
+        Rectangle bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+
+        _settings.WindowWidth = bounds.Width;
+        _settings.WindowHeight = bounds.Height;
+        _settings.WindowLeft = bounds.X;
+        _settings.WindowTop = bounds.Y;
+        _settings.WindowMaximized = WindowState == FormWindowState.Maximized;
+    }
+
     private void PickFolder(TextBox target, string description, bool reload)
     {
         using var dialog = new FolderBrowserDialog { Description = description, UseDescriptionForTitle = true };
@@ -310,11 +441,12 @@ public sealed class MainForm : Form
 
     private void LoadClips()
     {
-        _clips.Items.Clear();
+        _all.Clear();
         ClearPreview();
 
         if (!Directory.Exists(_inputFolder.Text))
         {
+            ApplyFilter();
             SetStatus("Input folder not found.");
             return;
         }
@@ -324,13 +456,13 @@ public sealed class MainForm : Form
         if (_settings.ClipSource == ClipSource.SteamClips) LoadSteamClips();
         else LoadExportedFiles();
 
-        if (_clips.Items.Count > 0) _clips.SelectedIndex = 0;
+        ApplyFilter();
     }
 
     private void LoadExportedFiles()
     {
         IReadOnlyList<string> files = BatchService.FindRecordings(_inputFolder.Text);
-        foreach (string file in files) _clips.Items.Add(new ClipEntry { Path = file }, isChecked: true);
+        foreach (string file in files) _all.Add(new ClipEntry { Path = file, Checked = true });
 
         SetStatus($"{files.Count} clip(s) found.");
     }
@@ -354,11 +486,14 @@ public sealed class MainForm : Form
 
         foreach (ClipListing clip in clips)
         {
-            // Already handled clips are listed but not selected, so pressing Remux does not
+            // Already handled clips are listed but not ticked, so pressing the button does not
             // silently redo them while they stay visible.
-            _clips.Items.Add(
-                new ClipEntry { Path = clip.Clip.Path, Listing = clip },
-                isChecked: clip.State == ClipState.New);
+            _all.Add(new ClipEntry
+            {
+                Path = clip.Clip.Path,
+                Listing = clip,
+                Checked = clip.State == ClipState.New,
+            });
         }
 
         int done = clips.Count(c => c.State != ClipState.New);
@@ -367,47 +502,103 @@ public sealed class MainForm : Form
             : $"{clips.Count} clip(s) found, {done} already done.");
     }
 
-    /// <summary>
-    /// Draws a row. Owner drawing means the checkbox has to be painted too, since the control
-    /// only draws it for us in its normal mode.
-    /// </summary>
-    private void DrawClipRow(object? sender, DrawItemEventArgs e)
+    /// <summary>Whether a row survives the status filters. Everything ticked shows everything.</summary>
+    private bool PassesFilter(ClipEntry entry)
     {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= _clips.Items.Count) return;
+        ClipStatus status = entry.Status;
 
-        var entry = _clips.Items[e.Index] as ClipEntry;
-        bool processed = entry?.IsProcessed ?? false;
-        bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-
-        var glyph = new Point(e.Bounds.Left + 2, e.Bounds.Top + (e.Bounds.Height - 14) / 2);
-        var state = _clips.GetItemChecked(e.Index)
-            ? (processed
-                ? System.Windows.Forms.VisualStyles.CheckBoxState.CheckedDisabled
-                : System.Windows.Forms.VisualStyles.CheckBoxState.CheckedNormal)
-            : (processed
-                ? System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedDisabled
-                : System.Windows.Forms.VisualStyles.CheckBoxState.UncheckedNormal);
-        CheckBoxRenderer.DrawCheckBox(e.Graphics, glyph, state);
-
-        var text = new Rectangle(
-            e.Bounds.Left + 22, e.Bounds.Top, Math.Max(0, e.Bounds.Width - 24), e.Bounds.Height);
-
-        Color colour = processed
-            ? (selected ? SystemColors.HighlightText : SystemColors.GrayText)
-            : e.ForeColor;
-
-        TextRenderer.DrawText(
-            e.Graphics, entry?.ToString() ?? string.Empty, e.Font ?? Font, text, colour,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-
-        e.DrawFocusRectangle();
+        return (_showNew.Checked && status.Untouched)
+            || (_showRemuxed.Checked && status.Remuxed)
+            || (_showUploaded.Checked && status.Uploaded)
+            || (_showPending.Checked && status.PendingUpload)
+            || (_showMissing.Checked && status.OutputMissing)
+            || (_showHighlights.Checked && status.CutToHighlights);
     }
 
+    /// <summary>
+    /// Rebuilds the visible rows from what has already been read, so filtering never touches the
+    /// disk. Each row's tick comes off the entry rather than the list, which is what lets a row
+    /// be hidden by a filter and brought back without losing the choice.
+    /// </summary>
+    private void ApplyFilter()
+    {
+        _populating = true;
+        try
+        {
+            _clips.BeginUpdate();
+            _clips.Items.Clear();
+
+            foreach (ClipEntry entry in _all.Where(PassesFilter))
+                _clips.Items.Add(RowFor(entry));
+
+            _clips.EndUpdate();
+        }
+        finally
+        {
+            _populating = false;
+        }
+
+        if (_clips.Items.Count > 0) _clips.Items[0].Selected = true;
+        UpdateFilterStatus();
+    }
+
+    private ListViewItem RowFor(ClipEntry entry)
+    {
+        ClipListing? listing = entry.Listing;
+        ClipStatus status = entry.Status;
+
+        string recorded = listing is null
+            ? string.Empty
+            : listing.RecordedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+        string name = listing?.Summary() ?? System.IO.Path.GetFileName(entry.Path);
+        string length = listing is null
+            ? string.Empty
+            : $"{listing.Clip.Manifest.Duration.TotalSeconds:0.#}s";
+
+        var row = new ListViewItem(new[]
+        {
+            recorded,
+            name,
+            length,
+            Tick(status.Remuxed),
+            Tick(status.Uploaded),
+            Tick(status.PendingUpload),
+            Tick(status.OutputMissing),
+            Tick(status.CutToHighlights),
+        })
+        {
+            Tag = entry,
+            Checked = entry.Checked,
+        };
+
+        // Greyed rather than hidden: a row that silently fails to appear is hard to tell from one
+        // the tool never found.
+        if (entry.IsProcessed) row.ForeColor = SystemColors.GrayText;
+
+        return row;
+    }
+
+    private static string Tick(bool done) => done ? "\u2713" : string.Empty;
+
+    private void UpdateFilterStatus()
+    {
+        if (_all.Count == 0 || _clips.Items.Count == _all.Count) return;
+
+        SetStatus($"{_clips.Items.Count} of {_all.Count} clip(s) shown.");
+    }
+
+    /// <summary>Ticks or unticks the rows on show, leaving anything a filter is hiding alone.</summary>
     private void ToggleAll()
     {
         bool allChecked = _clips.Items.Count > 0 && _clips.CheckedItems.Count == _clips.Items.Count;
-        for (int i = 0; i < _clips.Items.Count; i++) _clips.SetItemChecked(i, !allChecked);
+
+        foreach (ListViewItem row in _clips.Items)
+        {
+            row.Checked = !allChecked;
+            if (row.Tag is ClipEntry entry) entry.Checked = !allChecked;
+        }
+
         _selectAll.Text = allChecked ? "Select All" : "Deselect All";
     }
 
@@ -422,7 +613,7 @@ public sealed class MainForm : Form
 
     private async Task ShowPreviewAsync()
     {
-        if (_clips.SelectedItem is not ClipEntry entry) return;
+        if (Selected() is not { } entry) return;
 
         ClearPreview();
         _clipInfo.Text = "Reading clip...";
@@ -562,7 +753,7 @@ public sealed class MainForm : Form
 
     private async Task RunBatchAsync()
     {
-        List<ClipEntry> checkedEntries = _clips.CheckedItems.Cast<ClipEntry>().ToList();
+        List<ClipEntry> checkedEntries = Ticked();
         List<string> selected = checkedEntries.Select(c => c.Path).ToList();
         List<ClipListing> selectedClips = checkedEntries
             .Where(c => c.Listing is not null)
@@ -711,6 +902,7 @@ public sealed class MainForm : Form
         _highlights.Enabled = !busy && _settings.ClipSource == ClipSource.SteamClips;
         _skipDeaths.Enabled = !busy && _highlights.Checked;
         _minKills.Enabled = !busy && _highlights.Checked;
+        _filters.Enabled = !busy;
         _cancel.Enabled = busy;
         UseWaitCursor = busy;
     }
@@ -735,20 +927,44 @@ public sealed class MainForm : Form
         _ = ShowPreviewAsync();
     }
 
-    /// <summary>Reloads the list without losing which rows were ticked.</summary>
+    /// <summary>
+    /// Reloads the list without losing which rows were ticked.
+    ///
+    /// Only rows that were on the list before keep their state. A clip that appears *because* of
+    /// the change - turning on "Also list clips at or above the threshold" is the obvious case -
+    /// takes the tick a fresh load would have given it. Restoring the old set wholesale left
+    /// those rows unticked, so the button did nothing with the very clips the change revealed.
+    /// </summary>
     private void ReloadKeepingSelection()
     {
-        var wasChecked = new HashSet<string>(
-            _clips.CheckedItems.Cast<ClipEntry>().Select(KeyOf), StringComparer.Ordinal);
+        var before = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (ClipEntry entry in _all) before[KeyOf(entry)] = entry.Checked;
 
         LoadClips();
 
-        for (int i = 0; i < _clips.Items.Count; i++)
+        bool changed = false;
+        foreach (ClipEntry entry in _all)
         {
-            if (_clips.Items[i] is ClipEntry entry)
-                _clips.SetItemChecked(i, wasChecked.Contains(KeyOf(entry)));
+            if (!before.TryGetValue(KeyOf(entry), out bool wasChecked)) continue;
+            if (entry.Checked == wasChecked) continue;
+
+            entry.Checked = wasChecked;
+            changed = true;
         }
+
+        if (changed) ApplyFilter();
     }
+
+    /// <summary>The selected row's clip, or null when nothing is selected.</summary>
+    private ClipEntry? Selected() =>
+        _clips.SelectedItems.Count > 0 ? _clips.SelectedItems[0].Tag as ClipEntry : null;
+
+    /// <summary>The ticked rows that are actually on show.</summary>
+    private List<ClipEntry> Ticked() =>
+        _clips.CheckedItems.Cast<ListViewItem>()
+            .Select(row => row.Tag)
+            .OfType<ClipEntry>()
+            .ToList();
 
     /// <summary>What identifies a row across a reload: the clip's own identity where it has one.</summary>
     private static string KeyOf(ClipEntry entry) => entry.Listing?.Clip.Manifest.Id ?? entry.Path;

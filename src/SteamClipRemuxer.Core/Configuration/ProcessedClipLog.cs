@@ -40,6 +40,13 @@ public sealed record ProcessedClip
     public DateTimeOffset? RemuxedAt { get; init; }
     public DateTimeOffset? UploadedAt { get; init; }
 
+    /// <summary>
+    /// Whether the output was cut down to the clip's fights rather than being the whole clip.
+    /// Absent from logs written before the cut existed, which deserialise as false - honest
+    /// enough, since those runs were whole clips.
+    /// </summary>
+    public bool CutToHighlights { get; init; }
+
     /// <summary>Set once the clip reached YouTube, so the log doubles as a record of what is up there.</summary>
     public string? YouTubeVideoId { get; init; }
 
@@ -106,7 +113,7 @@ public sealed class ProcessedClipLog
 
     public void MarkRemuxed(
         string id, string clipFolder, string title,
-        string outputPath = "", DateTimeOffset? recordedAt = null)
+        string outputPath = "", DateTimeOffset? recordedAt = null, bool cutToHighlights = false)
     {
         ProcessedClip existing = Find(id) ?? new ProcessedClip { Id = id };
         _entries[id] = existing with
@@ -116,6 +123,7 @@ public sealed class ProcessedClipLog
             OutputPath = outputPath,
             RecordedAt = recordedAt ?? existing.RecordedAt,
             RemuxedAt = DateTimeOffset.UtcNow,
+            CutToHighlights = cutToHighlights,
         };
     }
 

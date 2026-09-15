@@ -87,6 +87,23 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, string> GameNames { get; set; } = new();
 
+    /// <summary>
+    /// Where the window was last, and how the clip list and preview were divided. All zero means
+    /// nothing has been saved yet, so the built-in layout is used.
+    ///
+    /// The position is only honoured when it still lands on an attached screen: a window restored
+    /// onto a monitor that has since been unplugged is a window that cannot be got back.
+    /// </summary>
+    public int WindowWidth { get; set; }
+
+    public int WindowHeight { get; set; }
+    public int WindowLeft { get; set; }
+    public int WindowTop { get; set; }
+    public bool WindowMaximized { get; set; }
+
+    /// <summary>Where the splitter between the clip list and the preview sat.</summary>
+    public int SplitterDistance { get; set; }
+
     public bool EnableYouTubeUpload { get; set; }
     public string YouTubeTitleTemplate { get; set; } = "{game} - {clip}";
     public string YouTubeDescriptionTemplate { get; set; } = "Recorded {recording_date}";

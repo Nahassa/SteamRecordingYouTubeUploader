@@ -77,8 +77,23 @@ left alone instead of deleting clips there to avoid uploading the same highlight
 ## GUI
 
 Pick an input folder and an output folder, tick the clips you want, press **Remux Selected**.
-The preview shows each clip at its *display* aspect, so you see the stretched result before
-committing. For a Steam clip it uses the thumbnail Steam already wrote, so it is instant.
+Ticking is on the checkbox only — clicking a clip's name selects it for preview without
+changing what will be processed. The preview shows each clip at its *display* aspect, so you see
+the stretched result before committing. For a Steam clip it uses the thumbnail Steam already
+wrote, so it is instant.
+
+The list has a column per status, ticked when it holds, and a filter for each above it:
+
+| | |
+|---|---|
+| **R** | remuxed — an output file was written |
+| **U** | uploaded — it reached YouTube |
+| **P** | pending upload — written but not yet uploaded, the work an upload-only run picks up |
+| **M** | output missing — written, still waiting to upload, and no longer where the log says |
+| **H** | cut to highlights rather than kept whole |
+
+The window size and the divider between the list and the preview are remembered between
+sessions.
 
 Originals move to `<input>/processed/`. If YouTube upload is on, uploaded clips move to
 `<output>/uploaded/` — they are kept, not deleted, so you can still play them locally.
@@ -207,7 +222,7 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
-tests/                       280 tests, no ffmpeg or GPU needed
+tests/                       293 tests, no ffmpeg or GPU needed
 ```
 
 `Core/Steam/` reads what Steam writes beside a clip: `clip.pb` through a small protobuf

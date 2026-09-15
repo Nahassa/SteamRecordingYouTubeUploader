@@ -14,6 +14,9 @@ public sealed record ClipListing
     public required ClipFolder Clip { get; init; }
     public required ClipState State { get; init; }
 
+    /// <summary>What has already been done with this clip, as the list's columns show it.</summary>
+    public ClipStatus Status { get; init; } = ClipStatus.New;
+
     /// <summary>What the clip shows, when the timeline could be read.</summary>
     public Highlight? Highlight { get; init; }
 
@@ -28,7 +31,17 @@ public sealed record ClipListing
 
     public DateTimeOffset RecordedAt => Clip.Manifest.SessionStart + Clip.Manifest.StartInSession;
 
-    /// <summary>What the list shows for this row.</summary>
+    /// <summary>
+    /// What the clip shows, without the timestamp or the state - the list has columns for both.
+    /// </summary>
+    public string Summary()
+    {
+        string what = Highlight?.Describe() ?? "Clip";
+        string where = Highlight?.Map is { Length: > 0 } map ? $" - {map}" : "";
+        return what + where;
+    }
+
+    /// <summary>The whole row as one line, for logs and anywhere without columns.</summary>
     public string Describe()
     {
         string what = Highlight?.Describe() ?? "Clip";
@@ -115,11 +128,23 @@ public sealed class ClipBatchService
             {
                 Clip = clip,
                 State = processed.StateOf(clip.Manifest.Id),
+                Status = ClipStatus.For(processed.Find(clip.Manifest.Id)),
                 Highlight = highlight,
                 GameName = game,
                 SuggestedName = ClipNaming.Expand(
                     settings.ClipFileNameTemplate, game, recordedAt, highlight),
             });
+        }
+
+        if (settings.IncludeLongClips)
+        {
+            int long_ = listings.Count(l => !l.Clip.Manifest.IsCropped(buffer));
+            if (long_ > 0)
+            {
+                log.Info(
+                    $"{long_} clip(s) at or above {settings.MaxClipSeconds}s are listed because "
+                    + "'Also list clips at or above the threshold' is on.");
+            }
         }
 
         if (skipped > 0)
@@ -390,7 +415,8 @@ public sealed class ClipBatchService
                 + $" ({included.Count} clips joined, video copied)");
 
             return new[] { await PublishAsync(
-                stitched, included, settings, processed, uploading ? youtube : null, ct)
+                stitched, included, settings, processed, uploading ? youtube : null,
+                cutToHighlights: false, ct)
                 .ConfigureAwait(false) };
         }
         catch (OperationCanceledException)
@@ -467,6 +493,7 @@ public sealed class ClipBatchService
         AppSettings settings,
         ProcessedClipLog processed,
         YouTubeClient? youtube,
+        bool cutToHighlights,
         CancellationToken ct)
     {
         ClipListing first = included[0];
@@ -482,7 +509,7 @@ public sealed class ClipBatchService
         {
             processed.MarkRemuxed(
                 listing.Clip.Manifest.Id, listing.Clip.FolderName, title,
-                stitched.OutputPath, listing.RecordedAt);
+                stitched.OutputPath, listing.RecordedAt, cutToHighlights);
         }
 
         processed.Save(onError: m => _log.Warning(m));
@@ -723,7 +750,8 @@ public sealed class ClipBatchService
                 $"  {Path.GetFileName(reel.OutputPath)} ({reel.Parts.Count} fight(s), "
                 + $"{kept.TotalSeconds:0.#}s kept, video copied)");
 
-            return await PublishAsync(reel, included, settings, processed, youtube, ct)
+            return await PublishAsync(
+                    reel, included, settings, processed, youtube, cutToHighlights: true, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
