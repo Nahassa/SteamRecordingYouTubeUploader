@@ -98,4 +98,30 @@ public class ClipNamingTests
     {
         Assert.Equal("Clip", ClipNaming.Expand("{weapon}", "", Recorded, new Highlight { KillCount = 0 }));
     }
+
+    [Theory]
+    [InlineData('<')]
+    [InlineData('>')]
+    [InlineData(':')]
+    [InlineData('"')]
+    [InlineData('/')]
+    [InlineData('\\')]
+    [InlineData('|')]
+    [InlineData('?')]
+    [InlineData('*')]
+    public void Every_character_windows_forbids_is_taken_out(char forbidden)
+    {
+        // Spelled out rather than asked of the running machine: Path.GetInvalidFileNameChars is
+        // NUL and '/' on Linux, so a colon would pass the tests and then fail to write on the
+        // Windows machine the app runs on.
+        Assert.DoesNotContain(forbidden, ClipNaming.Sanitise($"Ace{forbidden}on Mirage"));
+    }
+
+    [Fact]
+    public void A_control_character_is_taken_out_too() =>
+        Assert.DoesNotContain('\t', ClipNaming.Sanitise("Ace\ton Mirage"));
+
+    [Fact]
+    public void A_name_that_sanitises_away_to_nothing_still_has_one() =>
+        Assert.Equal("Clip", ClipNaming.Sanitise("///"));
 }

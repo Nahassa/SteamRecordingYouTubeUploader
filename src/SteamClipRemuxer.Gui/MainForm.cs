@@ -16,8 +16,12 @@ internal sealed class ClipEntry
     public SourceMedia? Media { get; set; }
     public string? ProbeError { get; set; }
 
-    /// <summary>Set when the row came from one of Steam's clip folders rather than an exported file.</summary>
-    public ClipListing? Listing { get; init; }
+    /// <summary>
+    /// Set when the row came from one of Steam's clip folders rather than an exported file.
+    /// Settable because renaming a clip replaces it, which beats rescanning the disk to show
+    /// one changed name.
+    /// </summary>
+    public ClipListing? Listing { get; set; }
 
     /// <summary>Already remuxed or uploaded, so the row is greyed out.</summary>
     public bool IsProcessed => Listing is not null && Listing.State != ClipState.New;
@@ -43,6 +47,7 @@ public sealed class MainForm : Form
     private readonly BatchService _batch;
     private readonly ClipBatchService _clipBatch;
     private readonly ProcessedClipLog _processed;
+    private readonly ClipNames _names;
     private readonly YouTubeClient _youtube = new();
 
     private readonly LogForm _log = new();
@@ -67,6 +72,8 @@ public sealed class MainForm : Form
         HideSelection = false,
         MultiSelect = false,
         HeaderStyle = ColumnHeaderStyle.Nonclickable,
+        // Renaming edits the first column, which is why the clip's name is the first column.
+        LabelEdit = true,
     };
 
     /// <summary>Every row found on disk, including those a filter is currently hiding.</summary>
@@ -186,6 +193,7 @@ public sealed class MainForm : Form
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
 
         _processed = ProcessedClipLog.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
+        _names = ClipNames.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
 
         BuildLayout();
         Restore();
@@ -227,8 +235,10 @@ public sealed class MainForm : Form
         // --- clips | preview -----------------------------------------------
         var split = new SplitContainer { Dock = DockStyle.Fill };
 
+        // The name the output will actually be given, and the one a rename edits. Shown rather
+        // than a prettier summary precisely so that what you see is what the file is called.
+        _clips.Columns.Add("Clip", 340);
         _clips.Columns.Add("Recorded", 120);
-        _clips.Columns.Add("Clip", 300);
         _clips.Columns.Add("Length", 60, HorizontalAlignment.Right);
         // One narrow column per status, ticked when it holds. Single letters because the width
         // is worth more to the clip's name than to spelling out five headings.
@@ -242,6 +252,33 @@ public sealed class MainForm : Form
             "R remuxed - U uploaded - P pending upload - M output missing - H cut to highlights");
 
         _clips.SelectedIndexChanged += async (_, _) => await ShowPreviewAsync().ConfigureAwait(true);
+
+        // An exported file already has a name of its own - the output takes it - so there is
+        // nothing generated to override.
+        _clips.BeforeLabelEdit += (_, e) =>
+            e.CancelEdit = _clips.Items[e.Item].Tag is not ClipEntry { Listing: not null };
+
+        _clips.AfterLabelEdit += (_, e) =>
+        {
+            // The control is not allowed to write the label itself: what is stored goes through
+            // the filename sanitiser first, and the row should show what was stored rather than
+            // what was typed.
+            e.CancelEdit = true;
+
+            if (e.Label is null) return;                         // escaped out of the edit
+            if (_clips.Items[e.Item].Tag is ClipEntry entry) Rename(entry, e.Label);
+        };
+
+        var rowMenu = new ContextMenuStrip();
+        ToolStripItem rename = rowMenu.Items.Add("&Rename", null, (_, _) => BeginRename());
+        ToolStripItem resetName = rowMenu.Items.Add("Reset &Name", null, (_, _) => ResetName());
+        rowMenu.Opening += (_, _) =>
+        {
+            ClipEntry? entry = Selected();
+            rename.Enabled = entry?.Listing is not null;
+            resetName.Enabled = entry?.Listing?.IsRenamed == true;
+        };
+        _clips.ContextMenuStrip = rowMenu;
         _clips.ItemChecked += (_, e) =>
         {
             if (_populating) return;
@@ -535,7 +572,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        IReadOnlyList<ClipListing> clips = ClipBatchService.FindClips(_settings, _processed, log);
+        IReadOnlyList<ClipListing> clips = ClipBatchService.FindClips(_settings, _processed, _names, log);
 
         foreach (ClipListing clip in clips)
         {
@@ -604,15 +641,15 @@ public sealed class MainForm : Form
             ? string.Empty
             : listing.RecordedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
-        string name = listing?.Summary() ?? System.IO.Path.GetFileName(entry.Path);
+        string name = NameOf(entry);
         string length = listing is null
             ? string.Empty
             : $"{listing.Clip.Manifest.Duration.TotalSeconds:0.#}s";
 
         var row = new ListViewItem(new[]
         {
-            recorded,
             name,
+            recorded,
             length,
             Tick(status.Remuxed),
             Tick(status.Uploaded),
@@ -633,6 +670,52 @@ public sealed class MainForm : Form
     }
 
     private static string Tick(bool done) => done ? "\u2713" : string.Empty;
+
+    /// <summary>What the first column shows: the name the output will be given.</summary>
+    private static string NameOf(ClipEntry entry) =>
+        entry.Listing?.SuggestedName ?? System.IO.Path.GetFileName(entry.Path);
+
+    private void BeginRename() =>
+        (_clips.SelectedItems.Count > 0 ? _clips.SelectedItems[0] : null)?.BeginEdit();
+
+    private void ResetName()
+    {
+        if (Selected() is { Listing: not null } entry) Rename(entry, null);
+    }
+
+    /// <summary>
+    /// Gives a clip a name of its own, or clears it back to the generated one when the text is
+    /// blank. The name is used for the file and for the YouTube title alike: renaming the file
+    /// and still uploading under the generated title would be the more surprising of the two.
+    /// </summary>
+    private void Rename(ClipEntry entry, string? typed)
+    {
+        if (entry.Listing is not { } listing) return;
+
+        string? stored = _names.Set(listing.Clip.Manifest.Id, typed);
+        _names.Save(onError: m => Log(LogLevel.Warning, m));
+
+        // Clearing the name has to put the generated one back, which means rebuilding it.
+        string generated = ClipNaming.Expand(
+            _settings.ClipFileNameTemplate, listing.GameName, listing.RecordedAt, listing.Highlight);
+
+        entry.Listing = listing with
+        {
+            CustomName = stored,
+            SuggestedName = stored ?? generated,
+        };
+
+        foreach (ListViewItem row in _clips.Items)
+        {
+            if (!ReferenceEquals(row.Tag, entry)) continue;
+
+            row.Text = NameOf(entry);
+            break;
+        }
+
+        // The preview spells out the output file name, so it is now stale.
+        _ = ShowPreviewAsync();
+    }
 
     private void UpdateFilterStatus()
     {

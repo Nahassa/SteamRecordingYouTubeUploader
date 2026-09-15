@@ -92,6 +92,16 @@ The list has a column per status, ticked when it holds, and a filter for each ab
 | **M** | output missing — written, still waiting to upload, and no longer where the log says |
 | **H** | cut to highlights rather than kept whole |
 
+Set a game's name under Settings → Game names, as `730 = CS2`, one per line. A clip folder
+identifies its game only by app id, so without an entry an unrecognised game is called "App 440",
+and anything set there beats the built-in name.
+
+The **Clip** column shows the name the output will be given. Press F2, or right-click and choose
+Rename, to give a clip a name of your own — it is used for the file *and* for the YouTube title,
+and it survives restarts. Right-click and Reset Name puts the generated one back. Renaming applies
+to Steam clips, where the name is generated; an exported file's output takes the input file's own
+name.
+
 Settings, Fix Timelines and Show Log are on the menu bar as well as on buttons — **File →
 Settings…**, **Tools → Fix Timelines**, **View → Show Log** — so they stay reachable however
 crowded the button row gets.
@@ -226,7 +236,7 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
-tests/                       293 tests, no ffmpeg or GPU needed
+tests/                       320 tests, no ffmpeg or GPU needed
 ```
 
 `Core/Steam/` reads what Steam writes beside a clip: `clip.pb` through a small protobuf

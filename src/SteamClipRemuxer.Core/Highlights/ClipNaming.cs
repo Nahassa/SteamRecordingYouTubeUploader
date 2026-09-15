@@ -61,9 +61,7 @@ public static class ClipNaming
     /// </summary>
     public static string Sanitise(string name)
     {
-        var cleaned = new string(name
-            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? ' ' : c)
-            .ToArray());
+        var cleaned = new string(name.Select(c => Forbidden(c) ? ' ' : c).ToArray());
 
         // Collapse the gaps a blank placeholder leaves behind, so an absent weapon does not
         // produce "Counter-Strike 2 -  - Double kill".
@@ -73,4 +71,17 @@ public static class ClipNaming
 
         return cleaned.Length == 0 ? "Clip" : cleaned;
     }
+
+    /// <summary>
+    /// Whether a character cannot appear in a file name.
+    ///
+    /// Windows' own set is spelled out rather than taken only from
+    /// <see cref="Path.GetInvalidFileNameChars"/>, because that call answers for the machine it
+    /// runs on: on Linux it is just NUL and '/', so a name carrying a colon would sail through
+    /// the tests and then fail to write on the Windows machine the app actually runs on.
+    /// </summary>
+    private static bool Forbidden(char c) =>
+        c < 32 || WindowsInvalid.Contains(c) || Path.GetInvalidFileNameChars().Contains(c);
+
+    private static readonly char[] WindowsInvalid = { '<', '>', ':', '"', '/', '\\', '|', '?', '*' };
 }

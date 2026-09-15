@@ -20,8 +20,17 @@ public sealed record ClipListing
     /// <summary>What the clip shows, when the timeline could be read.</summary>
     public Highlight? Highlight { get; init; }
 
-    /// <summary>The name the output file would be given.</summary>
+    /// <summary>
+    /// The name the output file is given: the one the user set for this clip, or the generated
+    /// one when they have not set any.
+    /// </summary>
     public required string SuggestedName { get; init; }
+
+    /// <summary>The name the user set, or null when the generated one is in use.</summary>
+    public string? CustomName { get; init; }
+
+    /// <summary>Whether the name came from the user rather than the template.</summary>
+    public bool IsRenamed => CustomName is { Length: > 0 };
 
     /// <summary>
     /// The game's name. Resolved from the app id where the settings are in scope, so a name the
@@ -92,10 +101,14 @@ public sealed class ClipBatchService
     /// is visible rather than being an unexplained absence.
     /// </summary>
     public static IReadOnlyList<ClipListing> FindClips(
-        AppSettings settings, ProcessedClipLog? processed = null, IPipelineLog? log = null)
+        AppSettings settings,
+        ProcessedClipLog? processed = null,
+        ClipNames? names = null,
+        IPipelineLog? log = null)
     {
         log ??= NullPipelineLog.Instance;
         processed ??= new ProcessedClipLog();
+        names ??= new ClipNames();
 
         IReadOnlyList<ClipFolder> folders = ClipFolder.Discover(settings.InputFolder, log);
         if (folders.Count == 0) return Array.Empty<ClipListing>();
@@ -124,6 +137,8 @@ public sealed class ClipBatchService
                     + $"'{game}'. Set one in Settings under Game names.");
             }
 
+            string? custom = names.For(clip.Manifest.Id);
+
             listings.Add(new ClipListing
             {
                 Clip = clip,
@@ -131,7 +146,8 @@ public sealed class ClipBatchService
                 Status = ClipStatus.For(processed.Find(clip.Manifest.Id)),
                 Highlight = highlight,
                 GameName = game,
-                SuggestedName = ClipNaming.Expand(
+                CustomName = custom,
+                SuggestedName = custom ?? ClipNaming.Expand(
                     settings.ClipFileNameTemplate, game, recordedAt, highlight),
             });
         }
@@ -241,7 +257,7 @@ public sealed class ClipBatchService
             _log.Success($"  {Path.GetFileName(remux.OutputPath)}"
                 + (remux.AspectOverridden ? " (stretched, video copied)" : " (video copied)"));
 
-            string title = TitleTemplate.Expand(
+            string title = listing.CustomName ?? TitleTemplate.Expand(
                 settings.YouTubeClipTitleTemplate, remux.OutputPath,
                 settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
                 highlight: listing.Highlight, recordedAt: listing.RecordedAt,
@@ -403,7 +419,7 @@ public sealed class ClipBatchService
             ClipStitchResult stitched = await _stitch
                 .StitchAsync(
                     inputs, settings.OutputFolder,
-                    kept => ClipNaming.Expand(
+                    kept => first.CustomName ?? ClipNaming.Expand(
                         ClipNaming.DefaultCompilationTemplate,
                         first.GameName, first.RecordedAt, highlight: null, count: kept),
                     options, ct)
@@ -499,8 +515,9 @@ public sealed class ClipBatchService
         ClipListing first = included[0];
 
         // The per-clip title template names one highlight, which would be a lie about a
-        // compilation, so this path has its own.
-        string title = TitleTemplate.Expand(
+        // compilation, so this path has its own - unless the first clip carries a name the user
+        // set, which beats anything generated.
+        string title = first.CustomName ?? TitleTemplate.Expand(
             TitleTemplate.DefaultCompilationTitle, stitched.OutputPath,
             settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
             recordedAt: first.RecordedAt, game: first.GameName, count: included.Count);
@@ -688,7 +705,7 @@ public sealed class ClipBatchService
                 return new[] { await AssembleReelAsync(
                     cuts.SelectMany(c => c.Parts).ToList(),
                     cuts.Select(c => c.Listing).ToList(),
-                    kept => ClipNaming.Expand(
+                    kept => first.CustomName ?? ClipNaming.Expand(
                         ClipNaming.DefaultCompilationTemplate,
                         first.GameName, first.RecordedAt, highlight: null, count: cuts.Count),
                     settings, processed, uploading ? youtube : null, options, ct)
