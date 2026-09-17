@@ -35,10 +35,26 @@ public sealed record UploadResult(bool Success, string? VideoId, string? VideoUr
 }
 
 /// <summary>
+/// The part of YouTube the pipeline actually needs: whether it can upload, and the upload.
+///
+/// Extracted so the publish path can be tested end to end. Without it the one thing worth
+/// proving about an upload - that the file archived afterwards is the untouched lossless one and
+/// never the temporary re-encode that was sent - could only be asserted about a record, not about
+/// what the code does.
+/// </summary>
+public interface IYouTubeUploader
+{
+    bool IsAuthenticated { get; }
+
+    Task<UploadResult> UploadAsync(
+        UploadRequest request, IProgress<int>? progress = null, CancellationToken ct = default);
+}
+
+/// <summary>
 /// YouTube upload. Reports failures through its return value rather than a dialog, so a
 /// failed upload cannot block a batch on a modal window.
 /// </summary>
-public sealed class YouTubeClient
+public sealed class YouTubeClient : IYouTubeUploader
 {
     private static readonly string[] Scopes = { YouTubeService.Scope.YoutubeUpload };
     private const string ApplicationName = "Steam Clip Remuxer";

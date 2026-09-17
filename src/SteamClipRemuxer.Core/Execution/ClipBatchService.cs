@@ -86,13 +86,58 @@ public sealed class ClipBatchService
         ClipRemuxService remux,
         ClipStitchService stitch,
         ClipHighlightService highlights,
-        IPipelineLog? log = null)
+        IPipelineLog? log = null,
+        ClipUpscaleService? upscale = null)
     {
         _remux = remux;
         _stitch = stitch;
         _highlights = highlights;
         _log = log ?? NullPipelineLog.Instance;
+        _upscale = upscale;
     }
+
+    /// <summary>
+    /// Scales a finished file up before upload, when that is switched on. Optional: without one
+    /// the setting simply has no effect, which keeps every existing caller working and keeps the
+    /// lossless paths free of it.
+    /// </summary>
+    private readonly ClipUpscaleService? _upscale;
+
+    /// <summary>
+    /// Works out what to upload and what to keep.
+    ///
+    /// Anything other than a finished, verified scale returns the lossless file: a failed upscale
+    /// costs the upscale, never the upload. The reason is logged either way, because an upload
+    /// that silently ignores a setting is indistinguishable from a broken one.
+    /// </summary>
+    private async Task<UploadPayload> PrepareUploadAsync(
+        string losslessPath, AppSettings settings, string workspace, CancellationToken ct)
+    {
+        if (settings.YouTubeUpscale == Configuration.YouTubeUpscale.Off)
+            return UploadPayload.Lossless(losslessPath);
+
+        if (_upscale is null)
+        {
+            _log.Warning("  upscaling is switched on but no encoder is wired up; uploading the original.");
+            return UploadPayload.Lossless(losslessPath);
+        }
+
+        UpscaleResult scaled = await _upscale
+            .UpscaleAsync(losslessPath, workspace, settings, ct)
+            .ConfigureAwait(false);
+
+        if (scaled.OutputPath is null)
+        {
+            _log.Info($"  uploading the original rather than a scaled copy: {scaled.Skipped}.");
+            return UploadPayload.Lossless(losslessPath);
+        }
+
+        return UploadPayload.Scaled(losslessPath, scaled.OutputPath);
+    }
+
+    /// <summary>A private scratch folder for the scaled copy, never the output folder.</summary>
+    private static string UpscaleWorkspace() =>
+        Path.Combine(Path.GetTempPath(), "sclip-upscale-" + Guid.NewGuid().ToString("N"));
 
     /// <summary>
     /// Every clip worth showing, newest first. Clips left at the full recording buffer are
@@ -196,7 +241,7 @@ public sealed class ClipBatchService
         IReadOnlyList<ClipListing> clips,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient? youtube = null,
+        IYouTubeUploader? youtube = null,
         IProgress<BatchProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -242,7 +287,7 @@ public sealed class ClipBatchService
         AppSettings settings,
         RemuxOptions options,
         ProcessedClipLog processed,
-        YouTubeClient? youtube,
+        IYouTubeUploader? youtube,
         CancellationToken ct)
     {
         ClipManifest manifest = listing.Clip.Manifest;
@@ -297,50 +342,68 @@ public sealed class ClipBatchService
         string title,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient youtube,
+        IYouTubeUploader youtube,
         CancellationToken ct)
     {
         string output = outcome.OutputPath!;
-        _log.Info("  uploading to YouTube...");
+        string workspace = UpscaleWorkspace();
 
-        var request = new UploadRequest
+        try
         {
-            FilePath = output,
-            Title = title,
-            Description = TitleTemplate.Expand(
-                settings.YouTubeDescriptionTemplate, output,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
-                highlight: listing.Highlight, recordedAt: listing.RecordedAt,
-                game: listing.GameName),
-            Tags = settings.ParsedTags,
-            PrivacyStatus = settings.YouTubePrivacyStatus,
-            CategoryId = settings.YouTubeCategoryId,
-            MadeForKids = settings.YouTubeMadeForKids,
-            AgeRestricted = settings.YouTubeAgeRestricted,
-            // Keeps the moment without spending title characters on it.
-            RecordedAt = listing.RecordedAt,
-        };
+            UploadPayload payload = await PrepareUploadAsync(output, settings, workspace, ct)
+                .ConfigureAwait(false);
 
-        UploadResult result = await PostAsync(request, youtube, ct).ConfigureAwait(false);
+            _log.Info("  uploading to YouTube...");
 
-        if (!result.Success)
-        {
-            // The clip is remuxed and kept; only the upload failed, and the log records it as
-            // remuxed so a later run can upload it without doing the work again.
-            _log.Error($"  upload failed: {result.Error}");
-            return outcome with { Error = result.Error };
+            var request = new UploadRequest
+            {
+                // The scaled copy when there is one; the description still reads from the
+                // lossless file's name, which is the one that carries the clip's identity.
+                FilePath = payload.UploadPath,
+                Title = title,
+                Description = TitleTemplate.Expand(
+                    settings.YouTubeDescriptionTemplate, output,
+                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                    highlight: listing.Highlight, recordedAt: listing.RecordedAt,
+                    game: listing.GameName),
+                Tags = settings.ParsedTags,
+                PrivacyStatus = settings.YouTubePrivacyStatus,
+                CategoryId = settings.YouTubeCategoryId,
+                MadeForKids = settings.YouTubeMadeForKids,
+                AgeRestricted = settings.YouTubeAgeRestricted,
+                // Keeps the moment without spending title characters on it.
+                RecordedAt = listing.RecordedAt,
+            };
+
+            UploadResult result = await PostAsync(request, youtube, ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                // The clip is remuxed and kept; only the upload failed, and the log records it as
+                // remuxed so a later run can upload it without doing the work again.
+                _log.Error($"  upload failed: {result.Error}");
+                return outcome with { Error = result.Error };
+            }
+
+            _log.Success($"  {result.VideoUrl}");
+            processed.MarkUploaded(listing.Clip.Manifest.Id, result.VideoId);
+
+            // The lossless file is what gets filed away, never the scaled copy.
+            string moved = FileOrganizer.MoveToUploaded(
+                payload.ArchivePath, Path.GetDirectoryName(payload.ArchivePath)!);
+
+            return outcome with { Uploaded = true, VideoUrl = result.VideoUrl, OutputPath = moved };
         }
-
-        _log.Success($"  {result.VideoUrl}");
-        processed.MarkUploaded(listing.Clip.Manifest.Id, result.VideoId);
-
-        string moved = FileOrganizer.MoveToUploaded(output, Path.GetDirectoryName(output)!);
-        return outcome with { Uploaded = true, VideoUrl = result.VideoUrl, OutputPath = moved };
+        finally
+        {
+            // However the upload went, the scaled copy goes. It is not an output.
+            TryDeleteDirectory(workspace);
+        }
     }
 
     /// <summary>Sends one upload, reporting its progress in quarters rather than every percent.</summary>
     private async Task<UploadResult> PostAsync(
-        UploadRequest request, YouTubeClient youtube, CancellationToken ct)
+        UploadRequest request, IYouTubeUploader youtube, CancellationToken ct)
     {
         var reported = new HashSet<int>();
         var progress = new Progress<int>(p =>
@@ -364,7 +427,7 @@ public sealed class ClipBatchService
         IReadOnlyList<ClipListing> clips,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient? youtube = null,
+        IYouTubeUploader? youtube = null,
         IProgress<BatchProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -510,7 +573,7 @@ public sealed class ClipBatchService
         string titleTemplate,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient? youtube,
+        IYouTubeUploader? youtube,
         bool cutToHighlights,
         CancellationToken ct)
     {
@@ -557,11 +620,52 @@ public sealed class ClipBatchService
                 + "YouTube to show them as chapters.");
         }
 
+        string workspace = UpscaleWorkspace();
+
+        try
+        {
+            return await SendAsync(
+                    stitched, included, first, title, settings, processed, youtube, outcome,
+                    workspace, ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // However the upload went, the scaled copy goes. It is not an output.
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>
+    /// Uploads a finished compilation or reel and files the lossless original away.
+    ///
+    /// Split out from PublishAsync so the scratch folder has exactly one place to be cleaned up,
+    /// rather than a try/finally wrapped around the whole of a method that also writes the
+    /// processed log.
+    /// </summary>
+    private async Task<ClipOutcome> SendAsync(
+        ClipStitchResult stitched,
+        IReadOnlyList<ClipListing> included,
+        ClipListing first,
+        string title,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        IYouTubeUploader youtube,
+        ClipOutcome outcome,
+        string workspace,
+        CancellationToken ct)
+    {
+        UploadPayload payload = await PrepareUploadAsync(
+                stitched.OutputPath, settings, workspace, ct)
+            .ConfigureAwait(false);
+
         _log.Info("  uploading to YouTube...");
 
         var request = new UploadRequest
         {
-            FilePath = stitched.OutputPath,
+            // The scaled copy when there is one. Chapters and description still come from the
+            // lossless file, whose timings the scale does not change.
+            FilePath = payload.UploadPath,
             Title = title,
             Description = WithChapters(
                 TitleTemplate.Expand(
@@ -597,8 +701,9 @@ public sealed class ClipBatchService
 
         processed.Save(onError: m => _log.Warning(m));
 
+        // The lossless file is what gets filed away, never the scaled copy.
         string moved = FileOrganizer.MoveToUploaded(
-            stitched.OutputPath, Path.GetDirectoryName(stitched.OutputPath)!);
+            payload.ArchivePath, Path.GetDirectoryName(payload.ArchivePath)!);
 
         return outcome with { Uploaded = true, VideoUrl = result.VideoUrl, OutputPath = moved };
     }
@@ -628,7 +733,7 @@ public sealed class ClipBatchService
         ProcessedClipLog processed,
         HighlightWindowOptions windowOptions,
         bool joinAcrossClips = false,
-        YouTubeClient? youtube = null,
+        IYouTubeUploader? youtube = null,
         IProgress<BatchProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -769,7 +874,7 @@ public sealed class ClipBatchService
         string titleTemplate,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient? youtube,
+        IYouTubeUploader? youtube,
         RemuxOptions options,
         CancellationToken ct)
     {

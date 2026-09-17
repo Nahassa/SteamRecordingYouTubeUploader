@@ -69,10 +69,20 @@ public sealed class ProcessedClipLog
 {
     private readonly Dictionary<string, ProcessedClip> _entries;
 
+    /// <summary>
+    /// Where this log came from, so <see cref="Save"/> puts it back there.
+    ///
+    /// Without this a log loaded from one file saved itself to the default one, which is fine in
+    /// the app - it only ever uses the default - and wrong anywhere else.
+    /// </summary>
+    private readonly string? _path;
+
     public ProcessedClipLog() : this(Array.Empty<ProcessedClip>()) { }
 
-    public ProcessedClipLog(IEnumerable<ProcessedClip> entries)
+    public ProcessedClipLog(IEnumerable<ProcessedClip> entries, string? path = null)
     {
+        _path = path;
+
         _entries = entries
             .Where(e => !string.IsNullOrWhiteSpace(e.Id))
             .GroupBy(e => e.Id, StringComparer.Ordinal)
@@ -158,11 +168,11 @@ public sealed class ProcessedClipLog
 
         try
         {
-            if (!File.Exists(path)) return new ProcessedClipLog();
+            if (!File.Exists(path)) return new ProcessedClipLog(Array.Empty<ProcessedClip>(), path);
 
             List<ProcessedClip>? entries =
                 JsonSerializer.Deserialize<List<ProcessedClip>>(File.ReadAllText(path), Options);
-            return new ProcessedClipLog(entries ?? new List<ProcessedClip>());
+            return new ProcessedClipLog(entries ?? new List<ProcessedClip>(), path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -178,11 +188,11 @@ public sealed class ProcessedClipLog
     /// </summary>
     public void Save(string? path = null, Action<string>? onError = null)
     {
-        path ??= AppPaths.ProcessedClipsFile;
+        path ??= _path ?? AppPaths.ProcessedClipsFile;
 
         try
         {
-            AppPaths.EnsureCreated();
+            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? AppPaths.DataDirectory);
 
             string temporary = path + ".tmp";
             List<ProcessedClip> ordered = _entries.Values

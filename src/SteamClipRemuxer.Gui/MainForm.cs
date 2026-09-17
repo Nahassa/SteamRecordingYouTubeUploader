@@ -189,8 +189,17 @@ public sealed class MainForm : Form
             _runner, _probe, new VideoStreamHasher(_runner),
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
 
-        _clipBatch = new ClipBatchService(clipRemuxService, stitchService, highlightService,
+        // Capability is probed once per session and cached, so a machine without the hardware
+        // pays for one trial encode of nothing rather than one per upload.
+        var capability = new EncoderCapability(
+            _runner, new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+        var upscaleService = new ClipUpscaleService(
+            _runner, _probe, capability,
             new DelegatePipelineLog((level, message) => _logSink.Report((level, message))));
+
+        _clipBatch = new ClipBatchService(clipRemuxService, stitchService, highlightService,
+            new DelegatePipelineLog((level, message) => _logSink.Report((level, message))),
+            upscaleService);
 
         _processed = ProcessedClipLog.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
         _names = ClipNames.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));

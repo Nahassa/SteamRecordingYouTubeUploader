@@ -250,11 +250,51 @@ A stretched clip is 1280x960 stored with a 4:3 sample aspect, which displays as 
 YouTube normalises to its own ladder — 144, 240, 360, 480, 720, 1080 — and 960 is not on it.
 It will not upscale, so 720p is the tallest rendition it can build.
 
-This is not fixable by any setting here, and 960p cannot be forced. Reaching 1080p would mean
-resampling, and resampling means re-encoding, which is the one thing this tool exists not to
-do. Uploading unstretched 4:3 does not help either: still 960 tall, still 720p, and
-pillarboxed. The deliberate choice is to keep every file a verbatim copy and let YouTube do
-the downscale.
+960p cannot be forced, and uploading unstretched 4:3 does not help either: still 960 tall, still
+720p, and pillarboxed. Reaching 1080 means resampling, and resampling means re-encoding — the one
+thing this tool otherwise never does. So it is off by default and, when switched on, it applies to
+the upload only.
+
+### Upscaling for the upload
+
+**Upscale for YouTube** in Settings takes `Off`, `1080p` or `1440p`. It was measured before it was
+built:
+
+| | SSIM | PSNR |
+| --- | --- | --- |
+| 720p rung, as YouTube builds it today | 0.8986 | 34.23 dB |
+| 1080p rung after upscaling | 0.9312 | **36.60 dB** |
+| 720p rung at the 1080p bitrate (control) | — | +0.78 dB |
+| 1440p rung after upscaling | 0.9510 | 38.53 dB |
+
+So +2.37 dB, of which only 0.78 dB is the extra bitrate — the rest is the rung. The Lanczos
+resample itself measured 47.2 dB round-trip, near-transparent, which is why the resample is the
+point and the encoder is not: the whole encoder field, SVT-AV1 through x264, spanned **0.19 dB
+across a 30x range of encode times**. Hence one software default (`libx265 -preset fast -crf 18`,
+10-bit) and one optional GPU path (`hevc_nvenc`, HEVC Main10 as well, so a 5080 and a 3080 emit the
+same format and differ only in speed).
+
+**The file kept on disk is still the lossless one.** The scaled copy is written to a scratch folder,
+uploaded, and deleted; only the verbatim remux is filed into `uploaded/`. That is enforced in code
+by keeping the upload path, the archive path and the temporary as three separate values, and it is
+covered by a test that reads the bytes back off disk.
+
+Before anything is uploaded the scaled copy is checked against the original: duration within 0.5s,
+frame count equal, display aspect equal, colour range, primaries, transfer and space each equal, bit
+depth not reduced, audio codec and channel count untouched, stream count unchanged, and SSIM at
+least 0.98 after scaling back down. Anything off and the original is uploaded instead — a failed
+upscale costs the upscale, never the upload.
+
+Two hazards are handled explicitly. Steam records full range (`color_range=pc`), and `zscale` spells
+that `full` while the output tag spells it `pc`; mixing the two vocabularies is how full-range
+footage comes out tagged limited, crushing every black. And NVENC has a long history of writing `tv`
+regardless of what it was handed — so a hardware result whose range does not match is rejected and
+re-encoded in software rather than accepted. The GPU option is tested by actually encoding with the
+exact flag set, not by grepping `ffmpeg -encoders`, which returns true on machines with no NVIDIA
+card in them.
+
+Upscaling applies to Steam clips uploaded through the GUI — single clips, compilations and
+highlights reels alike. The CLI's exported-file path uploads verbatim.
 
 OAuth setup is in [docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md). Credentials, tokens and
 settings live in `%APPDATA%\SteamClipRemuxer`.

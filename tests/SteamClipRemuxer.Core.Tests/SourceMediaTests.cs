@@ -90,4 +90,79 @@ public class SourceMediaTests
         Assert.Contains("-show_format", args);
         Assert.Equal("C:/a b/clip.mp4", args[^1]);
     }
+
+    [Fact]
+    public void Reads_every_colour_tag_a_reencode_has_to_carry()
+    {
+        // Filters do not reliably carry these across a format conversion, so anything that
+        // re-encodes has to read them here and tag them on the output explicitly.
+        SourceMedia m = RealClip();
+        Assert.Equal("bt709", m.ColorPrimaries);
+        Assert.Equal("bt709", m.ColorTransfer);
+        Assert.Equal("left", m.ChromaLocation);
+    }
+
+    [Fact]
+    public void Bit_depth_comes_from_the_pixel_format_when_the_container_omits_it()
+    {
+        // This is the case that matters: Steam's recordings carry no bits_per_raw_sample at all,
+        // so an implementation reading only that key reports nothing for every file this tool
+        // handles.
+        SourceMedia m = RealClip();
+        Assert.Null(m.BitsPerRawSample);
+        Assert.Equal(8, m.BitDepth);
+        Assert.Equal("Main", m.Profile);
+    }
+
+    [Theory]
+    [InlineData("yuv420p", 8)]
+    [InlineData("yuvj420p", 8)]
+    [InlineData("nv12", 8)]
+    [InlineData("yuv420p10le", 10)]
+    [InlineData("p010le", 10)]
+    [InlineData("yuv420p12le", 12)]
+    public void Bit_depth_is_inferred_for_each_pixel_format(string pixelFormat, int expected)
+    {
+        string json = "{\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"hevc\","
+            + "\"width\":1280,\"height\":960,\"pix_fmt\":\"" + pixelFormat + "\"}],"
+            + "\"format\":{\"duration\":\"9.0\"}}";
+
+        Assert.Equal(expected, SourceMedia.Parse(json, "/c.mp4").BitDepth);
+    }
+
+    [Fact]
+    public void A_stated_bit_depth_wins_over_the_pixel_format()
+    {
+        string json = "{\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"hevc\","
+            + "\"width\":1280,\"height\":960,\"pix_fmt\":\"yuv420p\",\"bits_per_raw_sample\":\"10\"}],"
+            + "\"format\":{\"duration\":\"9.0\"}}";
+
+        // Quoted, because ffprobe emits this one as a string in some builds and a number in
+        // others; reading only the number would drop it.
+        Assert.Equal(10, SourceMedia.Parse(json, "/c.mp4").BitDepth);
+    }
+
+    [Fact]
+    public void Reads_the_frame_count_and_the_audio_layout()
+    {
+        // All three feed the checks that replace the payload hash once a file is re-encoded.
+        SourceMedia m = RealClip();
+        Assert.Equal(557, m.FrameCount);
+        Assert.Equal("aac", m.AudioCodec);
+        Assert.Equal(2, m.AudioChannels);
+        Assert.Equal("60/1", m.RFrameRate);
+    }
+
+    [Fact]
+    public void A_file_with_no_audio_reports_none_rather_than_guessing()
+    {
+        string json = "{\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"codec_name\":\"hevc\","
+            + "\"width\":1280,\"height\":960,\"pix_fmt\":\"yuv420p\"}],"
+            + "\"format\":{\"duration\":\"9.0\"}}";
+
+        SourceMedia m = SourceMedia.Parse(json, "/c.mp4");
+        Assert.Null(m.AudioCodec);
+        Assert.Null(m.AudioChannels);
+        Assert.Equal(0, m.AudioStreamCount);
+    }
 }

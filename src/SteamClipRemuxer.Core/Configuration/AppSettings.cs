@@ -142,6 +142,26 @@ public sealed class AppSettings
     public bool YouTubeRemoveDateFromFilename { get; set; }
     public string YouTubeRemoveTextPatterns { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Scale the video up before uploading, to clear a YouTube ladder rung this footage falls just
+    /// short of. See <see cref="Configuration.YouTubeUpscale"/> for the measurements.
+    ///
+    /// Off by default, and off is the only setting that uploads the untouched stream. The file kept
+    /// on disk is the lossless one either way: the scaled copy is a temporary, uploaded and deleted.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public YouTubeUpscale YouTubeUpscale { get; set; } = YouTubeUpscale.Off;
+
+    /// <summary>
+    /// Use the GPU's encoder for that scaling when it can actually do it.
+    ///
+    /// Only honoured after a real trial encode of the exact option set succeeds; a machine without
+    /// the hardware, or an FFmpeg without the flags, falls back to software and says so in the log.
+    /// Worth very little in quality - the whole encoder field measured 0.19 dB apart - so this is a
+    /// speed setting wearing a quality setting's clothes.
+    /// </summary>
+    public bool UseHardwareEncoder { get; set; }
+
     [JsonIgnore]
     public AspectRatio ParsedTargetAspect =>
         AspectRatio.TryParse(TargetDisplayAspect) ?? AspectRatio.Widescreen;
