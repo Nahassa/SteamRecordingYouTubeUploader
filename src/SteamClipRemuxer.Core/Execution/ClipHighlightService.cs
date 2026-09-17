@@ -153,11 +153,24 @@ public sealed class ClipHighlightService
                 $"no round in this clip reached {windowOptions.MinimumKillsPerRound} kills");
         }
 
+        // A round cut into two pieces is still one round, so both pieces carry the round's own
+        // label and share a chapter. Built here rather than in CutRunAsync because naming a round
+        // needs every run of it, and a run only knows itself.
+        Dictionary<string, string> roundLabels = runs
+            .Where(r => r.ChapterGroup is not null)
+            .GroupBy(r => r.ChapterGroup!, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => ChunkWindows.RoundLabel(g.ToList()),
+                StringComparer.Ordinal);
+
         var parts = new List<StitchInput>();
         for (int i = 0; i < runs.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            parts.Add(await CutRunAsync(clip, runs[i], i, source, workspace, options, ct).ConfigureAwait(false));
+            parts.Add(await CutRunAsync(
+                    clip, runs[i], i, source, workspace, options, roundLabels, ct)
+                .ConfigureAwait(false));
         }
 
         return new ClipHighlightResult { Parts = parts, Runs = runs };
@@ -171,6 +184,7 @@ public sealed class ClipHighlightService
         SourceMedia source,
         string workspace,
         RemuxOptions options,
+        IReadOnlyDictionary<string, string> roundLabels,
         CancellationToken ct)
     {
         var assembled = new List<string>();
@@ -214,10 +228,15 @@ public sealed class ClipHighlightService
                 $"The video stream changed while cutting {run.Label}, so the output was discarded.");
         }
 
+        // The log stays per-run, naming the fight actually cut here; the chapter is the round's.
         _log.Info(
             $"  {run.Label}: chunks {run.FirstIndex}-{run.LastIndex} ({run.ChunkCount} x ~3s), video copied");
 
-        return new StitchInput(partPath, run.Label);
+        string label = run.ChapterGroup is { } group && roundLabels.TryGetValue(group, out string? round)
+            ? round
+            : run.Label;
+
+        return new StitchInput(partPath, label, run.ChapterGroup);
     }
 
     private async Task<IReadOnlyList<double>> ReadKeyframesAsync(string filePath, CancellationToken ct)

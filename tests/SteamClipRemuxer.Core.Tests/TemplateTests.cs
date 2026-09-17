@@ -1,4 +1,6 @@
+using SteamClipRemuxer.Core.Configuration;
 using SteamClipRemuxer.Core.Files;
+using SteamClipRemuxer.Core.Highlights;
 using SteamClipRemuxer.Core.Probing;
 using SteamClipRemuxer.Core.Thumbnails;
 using SteamClipRemuxer.Core.Timelines;
@@ -227,5 +229,81 @@ public class ThumbnailExtractorTests
         int i = args.ToList().IndexOf("-ss");
         Assert.True(i >= 0);
         Assert.Equal("4.652", args[i + 1]);
+    }
+}
+
+/// <summary>
+/// The YouTube titles for a compilation and for a highlights reel.
+///
+/// Every reel used to be titled through the compilation template, so a reel cut from one clip
+/// went out as "Counter-Strike 2 - 1 clip compilation" - the compilation title counting a single
+/// clip. Both are settings now, and a reel names the fight it is about.
+/// </summary>
+public class ReelTitleTests
+{
+    private const string File = "/out/Counter-Strike 2 - 2026-08-28 21-52-42 - Triple kill - Highlights.mp4";
+
+    private static readonly DateTimeOffset Recorded =
+        new(2026, 8, 28, 21, 52, 42, TimeSpan.Zero);
+
+    [Fact]
+    public void A_highlights_reel_is_titled_for_its_fight_not_as_a_one_clip_compilation()
+    {
+        string title = TitleTemplate.Expand(
+            new AppSettings().YouTubeHighlightsTitleTemplate, File,
+            highlight: new Highlight { KillCount = 3, Weapon = "AK-47" },
+            recordedAt: Recorded, game: "Counter-Strike 2", count: 1, fights: 1);
+
+        Assert.Equal("Counter-Strike 2 - Triple kill with the AK-47", title);
+        Assert.DoesNotContain("compilation", title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_compilation_default_is_unchanged_by_becoming_a_setting()
+    {
+        string title = TitleTemplate.Expand(
+            new AppSettings().YouTubeCompilationTitleTemplate, File,
+            recordedAt: Recorded, game: "Counter-Strike 2", count: 4, fights: 9);
+
+        Assert.Equal("Counter-Strike 2 - 4 clip compilation", title);
+    }
+
+    [Fact]
+    public void Clips_joined_and_fights_kept_are_counted_separately()
+    {
+        string title = TitleTemplate.Expand(
+            "{count} clips, {fights} fights", File,
+            game: "Counter-Strike 2", count: 3, fights: 9);
+
+        Assert.Equal("3 clips, 9 fights", title);
+    }
+
+    [Fact]
+    public void Every_naming_template_survives_being_saved_and_read_back()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+
+        try
+        {
+            var saved = new AppSettings
+            {
+                CompilationFileNameTemplate = "{game} comp {count}",
+                YouTubeCompilationTitleTemplate = "{game} comp title",
+                HighlightsFileNameTemplate = "{clip_name} reel",
+                YouTubeHighlightsTitleTemplate = "{game} reel title",
+            };
+
+            saved.Save(path);
+            AppSettings loaded = AppSettings.Load(path);
+
+            Assert.Equal("{game} comp {count}", loaded.CompilationFileNameTemplate);
+            Assert.Equal("{game} comp title", loaded.YouTubeCompilationTitleTemplate);
+            Assert.Equal("{clip_name} reel", loaded.HighlightsFileNameTemplate);
+            Assert.Equal("{game} reel title", loaded.YouTubeHighlightsTitleTemplate);
+        }
+        finally
+        {
+            if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
+        }
     }
 }

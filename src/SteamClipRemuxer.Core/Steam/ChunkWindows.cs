@@ -1,3 +1,4 @@
+using System.Globalization;
 using SteamClipRemuxer.Core.Highlights;
 using SteamClipRemuxer.Core.Timelines;
 
@@ -44,9 +45,13 @@ public sealed record ChunkRun
     public int Kills => Engagements.Sum(e => e.KillCount);
 
     /// <summary>
-    /// What the chapter reads. A run covering two separate fights is named for the bigger one:
-    /// they are more than an engagement window apart, so summing them into a "triple kill" would
-    /// claim something that did not happen.
+    /// What this one run reads, in the log. A run covering two separate fights is named for the
+    /// bigger one: they are more than an engagement window apart, so summing them into a "triple
+    /// kill" would claim a multi-kill that did not happen.
+    ///
+    /// A round is different, and <see cref="ChunkWindows.RoundLabel"/> does sum it. "Ace" in
+    /// Counter-Strike means killing the enemy team over a round, not inside one engagement, so
+    /// a round's total is a real thing to name where a run's is not.
     /// </summary>
     public string Label
     {
@@ -60,6 +65,13 @@ public sealed record ChunkRun
             return Round is { } round ? $"Round {round} - {best.Label}" : best.Label;
         }
     }
+
+    /// <summary>
+    /// Identifies the chapter this run belongs to, or null when it has no round to share. Runs
+    /// carrying the same key and lying next to each other are listed as one timestamp.
+    /// </summary>
+    public string? ChapterGroup =>
+        Round is { } round ? round.ToString(CultureInfo.InvariantCulture) : null;
 }
 
 /// <summary>
@@ -78,6 +90,43 @@ public sealed record ChunkRun
 /// </summary>
 public static class ChunkWindows
 {
+    /// <summary>
+    /// What a whole round reads, over every run cut from it.
+    ///
+    /// Summed rather than named for its biggest fight, because a round is the unit the count
+    /// belongs to: a double kill and a triple kill in round 19 are five kills in round 19, which
+    /// Counter-Strike calls an ace. Listing them as two timestamps says the round happened twice.
+    ///
+    /// The weapon survives only when every kill in the round used the same one - the rule
+    /// <see cref="Engagement"/> already applies within a fight, applied one level up.
+    /// </summary>
+    public static string RoundLabel(IReadOnlyList<ChunkRun> runsOfOneRound)
+    {
+        if (runsOfOneRound.Count == 0) throw new ArgumentException("No runs.", nameof(runsOfOneRound));
+
+        List<Engagement> fights = runsOfOneRound.SelectMany(r => r.Engagements).ToList();
+
+        // Nulls are filtered before the comparison rather than counted as a value: Steam records
+        // no weapon at all for some multi-kills, and StringComparer throws on a null anyway.
+        bool everyFightNamesAWeapon = fights.All(f => !string.IsNullOrEmpty(f.Weapon));
+        string[] weapons = fights
+            .Select(f => f.Weapon)
+            .Where(w => !string.IsNullOrEmpty(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()!;
+
+        var whole = new Highlight
+        {
+            KillCount = fights.Sum(f => f.KillCount),
+            // Claimed only when the whole round used one weapon. A round where Steam recorded a
+            // weapon for half the kills is not a round fought with that weapon.
+            Weapon = everyFightNamesAWeapon && weapons.Length == 1 ? weapons[0] : null,
+        };
+
+        int? round = runsOfOneRound[0].Round;
+        return round is { } number ? $"Round {number} - {whole.Describe()}" : whole.Describe();
+    }
+
     /// <summary>
     /// The runs of chunks to keep, in playback order and non-overlapping.
     /// </summary>

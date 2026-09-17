@@ -81,6 +81,33 @@ public sealed class AppSettings
     public string YouTubeClipTitleTemplate { get; set; } = Youtube.TitleTemplate.DefaultClipTitle;
 
     /// <summary>
+    /// Name for a compilation file. Its {count} counts the clips joined, and it carries no
+    /// {map}, {round} or {highlight}: a video spanning several clips has no single one of those,
+    /// and a default should not lean on the sanitiser to sweep up the gap.
+    /// </summary>
+    public string CompilationFileNameTemplate { get; set; } =
+        Highlights.ClipNaming.DefaultCompilationTemplate;
+
+    /// <summary>YouTube title for a compilation. Used for a highlights reel joined across clips too.</summary>
+    public string YouTubeCompilationTitleTemplate { get; set; } =
+        Youtube.TitleTemplate.DefaultCompilationTitle;
+
+    /// <summary>
+    /// Name for a reel cut down to one clip's fights. {clip_name} is that clip's own file name,
+    /// so the default tracks the clip file name template rather than restating it.
+    /// </summary>
+    public string HighlightsFileNameTemplate { get; set; } =
+        Highlights.ClipNaming.DefaultHighlightsTemplate;
+
+    /// <summary>
+    /// YouTube title for a reel cut down to one clip's fights. Before this existed every reel
+    /// went out titled "1 clip compilation", which is the compilation title counting a single
+    /// clip.
+    /// </summary>
+    public string YouTubeHighlightsTitleTemplate { get; set; } =
+        Youtube.TitleTemplate.DefaultHighlightsTitle;
+
+    /// <summary>
     /// Game names by Steam app id, e.g. "730" -> "Counter-Strike 2". A clip folder identifies its
     /// game only by id, so without an entry an unrecognised game is named "App 440". Only
     /// Counter-Strike 2 is built in, and anything set here wins over that.

@@ -6,8 +6,14 @@ using SteamClipRemuxer.Core.Probing;
 
 namespace SteamClipRemuxer.Core.Execution;
 
-/// <summary>One finished file going into a compilation, with the name its chapter should carry.</summary>
-public sealed record StitchInput(string Path, string Label);
+/// <summary>
+/// One finished file going into a compilation, with the name its chapter should carry.
+///
+/// <paramref name="Group"/> lets several parts share one chapter. A round can hold two fights far
+/// enough apart that they are cut as separate pieces, and listing both is double-counting: the
+/// round is one thing that happened. Null - the compilation case - means one chapter per part.
+/// </summary>
+public sealed record StitchInput(string Path, string Label, string? Group = null);
 
 /// <summary>Where a part ended up inside the finished compilation.</summary>
 public sealed record StitchPart
@@ -16,7 +22,13 @@ public sealed record StitchPart
     public required string Label { get; init; }
     public required TimeSpan StartsAt { get; init; }
     public required TimeSpan Duration { get; init; }
+
+    /// <summary>Chapter this part belongs to; see <see cref="StitchInput.Group"/>.</summary>
+    public string? Group { get; init; }
 }
+
+/// <summary>One line of the timestamp list, which may cover more than one part.</summary>
+public sealed record Chapter(TimeSpan StartsAt, TimeSpan Duration, string Label);
 
 public sealed record ClipStitchResult
 {
@@ -46,14 +58,55 @@ public static class StitchChapters
     /// this tool produces, so failing the test is normal rather than an error; the list is still
     /// worth publishing as plain timestamps.
     /// </summary>
-    public static bool QualifyAsYouTubeChapters(IReadOnlyList<StitchPart> parts) =>
-        parts.Count >= MinimumChapters
-        && parts[0].StartsAt == TimeSpan.Zero
-        && parts.All(p => p.Duration >= MinimumChapterLength);
+    public static bool QualifyAsYouTubeChapters(IReadOnlyList<StitchPart> parts)
+    {
+        IReadOnlyList<Chapter> chapters = Chapters(parts);
 
-    /// <summary>One "0:00  Double kill with the AK-47" line per part.</summary>
+        return chapters.Count >= MinimumChapters
+            && chapters[0].StartsAt == TimeSpan.Zero
+            && chapters.All(c => c.Duration >= MinimumChapterLength);
+    }
+
+    /// <summary>
+    /// The lines the description will carry, collapsing consecutive parts that share a group.
+    ///
+    /// Judged on chapters rather than on parts, because two pieces cut from one round are one
+    /// chapter: counting them separately would let a two-round reel claim it clears YouTube's
+    /// three-chapter minimum when the list it prints has two lines.
+    /// </summary>
+    public static IReadOnlyList<Chapter> Chapters(IReadOnlyList<StitchPart> parts)
+    {
+        var chapters = new List<Chapter>();
+
+        for (int i = 0; i < parts.Count; i++)
+        {
+            StitchPart part = parts[i];
+
+            // Only a run of neighbours collapses. Two pieces of the same round are always
+            // adjacent, so matching on the previous part rather than on the open chapter keeps a
+            // group from swallowing something that came between.
+            bool continues = part.Group is not null
+                && i > 0
+                && string.Equals(parts[i - 1].Group, part.Group, StringComparison.Ordinal);
+
+            if (continues)
+            {
+                Chapter open = chapters[^1];
+                chapters[^1] = open with { Duration = open.Duration + part.Duration };
+                continue;
+            }
+
+            chapters.Add(new Chapter(part.StartsAt, part.Duration, part.Label));
+        }
+
+        return chapters;
+    }
+
+    /// <summary>One "0:00  Double kill with the AK-47" line per chapter.</summary>
     public static string Describe(IReadOnlyList<StitchPart> parts) =>
-        string.Join(Environment.NewLine, parts.Select(p => $"{Stamp(p.StartsAt)}  {p.Label}"));
+        string.Join(
+            Environment.NewLine,
+            Chapters(parts).Select(c => $"{Stamp(c.StartsAt)}  {c.Label}"));
 
     /// <summary>
     /// YouTube requires "0:00" rather than "00:00" for the opening chapter, and only shows the
@@ -328,6 +381,7 @@ public sealed class ClipStitchService
                 {
                     Path = part.Path,
                     Label = part.Label,
+                    Group = part.Group,
                     StartsAt = TimeSpan.Zero,
                     Duration = TimeSpan.FromSeconds(media.DurationSeconds),
                 },
@@ -386,6 +440,7 @@ public sealed class ClipStitchService
             {
                 Path = input.Path,
                 Label = input.Label,
+                Group = input.Group,
                 StartsAt = at,
                 Duration = duration,
             });

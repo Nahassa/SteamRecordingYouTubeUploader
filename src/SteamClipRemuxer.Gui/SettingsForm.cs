@@ -45,6 +45,11 @@ public sealed class SettingsForm : Form
     };
 
     private readonly TextBox _clipFileName = new() { Width = 380 };
+    private readonly TextBox _clipTitle = new() { Width = 380 };
+    private readonly TextBox _compilationFileName = new() { Width = 380 };
+    private readonly TextBox _compilationTitle = new() { Width = 380 };
+    private readonly TextBox _highlightsFileName = new() { Width = 380 };
+    private readonly TextBox _highlightsTitle = new() { Width = 380 };
 
     private readonly TextBox _gameNames = new()
     {
@@ -68,7 +73,9 @@ public sealed class SettingsForm : Form
         _settings = settings;
 
         Text = "Settings";
-        Size = new Size(560, 620);
+        // Taller than the content needs on purpose: the naming block is six rows, and a form
+        // that opens mid-scroll is how a setting goes unnoticed. AutoScroll still covers the rest.
+        Size = new Size(560, 760);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.SizableToolWindow;
         MinimizeBox = false;
@@ -119,9 +126,21 @@ public sealed class SettingsForm : Form
             + "cut can manage."));
 
         layout.Controls.Add(Row("Clip file name:", _clipFileName));
+        layout.Controls.Add(Row("Clip YouTube title:", _clipTitle));
+        layout.Controls.Add(Row("Compilation file name:", _compilationFileName));
+        layout.Controls.Add(Row("Compilation YouTube title:", _compilationTitle));
+        layout.Controls.Add(Row("Highlights file name:", _highlightsFileName));
+        layout.Controls.Add(Row("Highlights YouTube title:", _highlightsTitle));
         layout.Controls.Add(Note(
             "Placeholders: {game} {recording_date} {recording_time} {highlight} {highlight_full} "
-            + "{weapon} {map} {mode} {round} {kills}"));
+            + "{weapon} {map} {mode} {round} {kills} {count} {fights} {clip_name}"));
+        layout.Controls.Add(Note(
+            "{count} is clips joined and {fights} is fights kept - a reel from three clips can "
+            + "hold seven fights. {clip_name} is the clip's own file name, so a highlights reel "
+            + "follows whatever the clip file name is set to. {highlight}, {weapon}, {map} and "
+            + "{round} describe one clip, so they are empty on anything spanning several; the "
+            + "name closes up around them rather than leaving a gap. Renaming a clip in the list "
+            + "beats every box here."));
 
         layout.Controls.Add(Row("Game names:", _gameNames));
         layout.Controls.Add(Note(
@@ -194,6 +213,10 @@ public sealed class SettingsForm : Form
         return panel;
     }
 
+    /// <summary>What a template box holds, or the built-in default when it has been emptied.</summary>
+    private static string Templated(TextBox box, string fallback) =>
+        string.IsNullOrWhiteSpace(box.Text) ? fallback : box.Text;
+
     private void ApplyToUi()
     {
         _aspect.Text = _settings.TargetDisplayAspect;
@@ -210,6 +233,11 @@ public sealed class SettingsForm : Form
         _respectCrop.Checked = _settings.RespectSteamCrop;
         _skipProcessed.Checked = _settings.SkipAlreadyProcessed;
         _clipFileName.Text = _settings.ClipFileNameTemplate;
+        _clipTitle.Text = _settings.YouTubeClipTitleTemplate;
+        _compilationFileName.Text = _settings.CompilationFileNameTemplate;
+        _compilationTitle.Text = _settings.YouTubeCompilationTitleTemplate;
+        _highlightsFileName.Text = _settings.HighlightsFileNameTemplate;
+        _highlightsTitle.Text = _settings.YouTubeHighlightsTitleTemplate;
 
         _gameNames.Text = SteamClipRemuxer.Core.Steam.SteamApps.FormatOverrides(_settings.GameNames);
 
@@ -238,9 +266,23 @@ public sealed class SettingsForm : Form
         _settings.HighlightTailSeconds = (int)_highlightTail.Value;
         _settings.RespectSteamCrop = _respectCrop.Checked;
         _settings.SkipAlreadyProcessed = _skipProcessed.Checked;
-        _settings.ClipFileNameTemplate = string.IsNullOrWhiteSpace(_clipFileName.Text)
-            ? SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultTemplate
-            : _clipFileName.Text;
+        // A blank box means "give me the default back", not "name every file Clip".
+        _settings.ClipFileNameTemplate = Templated(
+            _clipFileName, SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultTemplate);
+        _settings.YouTubeClipTitleTemplate = Templated(
+            _clipTitle, SteamClipRemuxer.Core.Youtube.TitleTemplate.DefaultClipTitle);
+        _settings.CompilationFileNameTemplate = Templated(
+            _compilationFileName,
+            SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultCompilationTemplate);
+        _settings.YouTubeCompilationTitleTemplate = Templated(
+            _compilationTitle,
+            SteamClipRemuxer.Core.Youtube.TitleTemplate.DefaultCompilationTitle);
+        _settings.HighlightsFileNameTemplate = Templated(
+            _highlightsFileName,
+            SteamClipRemuxer.Core.Highlights.ClipNaming.DefaultHighlightsTemplate);
+        _settings.YouTubeHighlightsTitleTemplate = Templated(
+            _highlightsTitle,
+            SteamClipRemuxer.Core.Youtube.TitleTemplate.DefaultHighlightsTitle);
 
         _settings.GameNames = SteamClipRemuxer.Core.Steam.SteamApps.ParseOverrides(_gameNames.Text);
 

@@ -154,8 +154,13 @@ Rounds are respected, because a clip is usually longer than a round: the competi
 measured here run 97–106 seconds against a 120-second buffer, so a clip left at the full buffer
 almost always spans a boundary. A run is clamped at the round it belongs to, and two runs either
 side of a boundary are never merged — otherwise the round-end screen and the next round's buy time
-end up in the middle of the reel. Chapters name the round: `0:00  Round 20 - Double kill with the
-AK-47`.
+end up in the middle of the reel.
+
+Chapters name the round, and a round gets **one** line however many pieces it was cut into. A round
+holding a double kill and a triple kill far enough apart to be cut separately used to publish two
+timestamps for one round; it now reads `0:00  Round 19 - Ace`, because five kills in a round is what
+Counter-Strike calls an ace. The weapon is kept only when every kill in the round used it. YouTube's
+three-chapter minimum is judged on the lines actually printed, not on the pieces behind them.
 
 Because this only ever sees the chunks inside the clip, it condenses a clip you saved; it cannot
 mine a whole session. It also only knows what Steam wrote down — no video is analysed, so a kill
@@ -165,6 +170,30 @@ everything there.
 
 Untouched clips are where this pays off most, and they are exactly what the duration threshold
 hides — so Settings has **Also list clips at or above the threshold** to bring them back.
+
+### Naming
+
+Settings carries six naming boxes under **Steam clips** — a file name and a YouTube title each for a
+single clip, a compilation, and a highlights reel. All six default to what the code used to hardcode,
+so an install nobody has touched names everything exactly as before.
+
+| Placeholder | Means |
+| --- | --- |
+| `{game}` | the game, honouring the app-id overrides below |
+| `{recording_date}` `{recording_time}` | when the clip was recorded, not when the batch ran |
+| `{highlight}` `{highlight_full}` `{weapon}` `{kills}` | the clip's largest fight, ties broken by the earliest |
+| `{map}` `{mode}` `{round}` | where and when, from the timeline |
+| `{count}` | clips joined |
+| `{fights}` | fights kept — a reel from three clips can hold seven |
+| `{clip_name}` | the clip's own file name, so a reel follows the clip file name box |
+
+`{highlight}`, `{weapon}`, `{map}` and `{round}` describe one clip, so they come out empty on anything
+spanning several; the name closes up around them rather than leaving a `" - - "` behind. Renaming a
+clip in the list still beats every box.
+
+One of these was a bug rather than a preference: a reel cut from a single clip went to YouTube titled
+*"Counter-Strike 2 - 1 clip compilation"*, because every joined output was titled through the
+compilation template and a one-clip reel expanded `{count}` to 1. Reels have their own title now.
 
 The cut selects chunks rather than asking FFmpeg to seek, and the difference is not cosmetic. On
 the sample, `-ss 6 -t 3` wrote 360 packets for a 180-frame window and hid the excess behind an edit

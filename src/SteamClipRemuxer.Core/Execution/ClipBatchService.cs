@@ -420,7 +420,7 @@ public sealed class ClipBatchService
                 .StitchAsync(
                     inputs, settings.OutputFolder,
                     kept => first.CustomName ?? ClipNaming.Expand(
-                        ClipNaming.DefaultCompilationTemplate,
+                        settings.CompilationFileNameTemplate,
                         first.GameName, first.RecordedAt, highlight: null, count: kept),
                     options, ct)
                 .ConfigureAwait(false);
@@ -431,7 +431,8 @@ public sealed class ClipBatchService
                 + $" ({included.Count} clips joined, video copied)");
 
             return new[] { await PublishAsync(
-                stitched, included, settings, processed, uploading ? youtube : null,
+                stitched, included, settings.YouTubeCompilationTitleTemplate,
+                settings, processed, uploading ? youtube : null,
                 cutToHighlights: false, ct)
                 .ConfigureAwait(false) };
         }
@@ -506,6 +507,7 @@ public sealed class ClipBatchService
     private async Task<ClipOutcome> PublishAsync(
         ClipStitchResult stitched,
         IReadOnlyList<ClipListing> included,
+        string titleTemplate,
         AppSettings settings,
         ProcessedClipLog processed,
         YouTubeClient? youtube,
@@ -514,13 +516,19 @@ public sealed class ClipBatchService
     {
         ClipListing first = included[0];
 
-        // The per-clip title template names one highlight, which would be a lie about a
-        // compilation, so this path has its own - unless the first clip carries a name the user
-        // set, which beats anything generated.
+        // Which template this is depends on what was built: naming one highlight would be a lie
+        // about a compilation, and calling a single clip's reel a "1 clip compilation" was a lie
+        // the other way. A name the user set on the clip beats either.
+        //
+        // {highlight} is only offered for a reel of one clip, where HighlightSelector has already
+        // picked that clip's largest engagement. Across several clips there is no one fight to
+        // name, so it is left null and collapses away.
         string title = first.CustomName ?? TitleTemplate.Expand(
-            TitleTemplate.DefaultCompilationTitle, stitched.OutputPath,
+            titleTemplate, stitched.OutputPath,
             settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
-            recordedAt: first.RecordedAt, game: first.GameName, count: included.Count);
+            highlight: included.Count == 1 ? first.Highlight : null,
+            recordedAt: first.RecordedAt, game: first.GameName,
+            count: included.Count, fights: stitched.Parts.Count);
 
         foreach (ClipListing listing in included)
         {
@@ -559,7 +567,9 @@ public sealed class ClipBatchService
                 TitleTemplate.Expand(
                     settings.YouTubeDescriptionTemplate, stitched.OutputPath,
                     settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
-                    recordedAt: first.RecordedAt, game: first.GameName, count: included.Count),
+                    highlight: included.Count == 1 ? first.Highlight : null,
+                    recordedAt: first.RecordedAt, game: first.GameName,
+                    count: included.Count, fights: stitched.Parts.Count),
                 stitched.Parts),
             Tags = settings.ParsedTags,
             PrivacyStatus = settings.YouTubePrivacyStatus,
@@ -705,9 +715,13 @@ public sealed class ClipBatchService
                 return new[] { await AssembleReelAsync(
                     cuts.SelectMany(c => c.Parts).ToList(),
                     cuts.Select(c => c.Listing).ToList(),
+                    // A reel spanning several clips is a compilation of highlights, so it keeps
+                    // the compilation's name and title. {count} is clips, {fights} the pieces cut.
                     kept => first.CustomName ?? ClipNaming.Expand(
-                        ClipNaming.DefaultCompilationTemplate,
-                        first.GameName, first.RecordedAt, highlight: null, count: cuts.Count),
+                        settings.CompilationFileNameTemplate,
+                        first.GameName, first.RecordedAt, highlight: null,
+                        count: cuts.Count, fights: kept),
+                    settings.YouTubeCompilationTitleTemplate,
                     settings, processed, uploading ? youtube : null, options, ct)
                     .ConfigureAwait(false) };
             }
@@ -717,7 +731,11 @@ public sealed class ClipBatchService
             {
                 outcomes.Add(await AssembleReelAsync(
                         parts, new[] { listing },
-                        _ => ClipNaming.Sanitise(listing.SuggestedName + " - Highlights"),
+                        kept => listing.CustomName ?? ClipNaming.Expand(
+                            settings.HighlightsFileNameTemplate,
+                            listing.GameName, listing.RecordedAt, listing.Highlight,
+                            count: 1, clipName: listing.SuggestedName, fights: kept),
+                        settings.YouTubeHighlightsTitleTemplate,
                         settings, processed, uploading ? youtube : null, options, ct)
                     .ConfigureAwait(false));
             }
@@ -748,6 +766,7 @@ public sealed class ClipBatchService
         IReadOnlyList<StitchInput> parts,
         IReadOnlyList<ClipListing> included,
         Func<int, string> name,
+        string titleTemplate,
         AppSettings settings,
         ProcessedClipLog processed,
         YouTubeClient? youtube,
@@ -768,7 +787,8 @@ public sealed class ClipBatchService
                 + $"{kept.TotalSeconds:0.#}s kept, video copied)");
 
             return await PublishAsync(
-                    reel, included, settings, processed, youtube, cutToHighlights: true, ct)
+                    reel, included, titleTemplate, settings, processed, youtube,
+                    cutToHighlights: true, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

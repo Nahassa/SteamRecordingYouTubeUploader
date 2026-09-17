@@ -21,6 +21,13 @@ public static class TitleTemplate
     /// </summary>
     public const string DefaultCompilationTitle = "{game} - {count} clip compilation";
 
+    /// <summary>
+    /// Default for a reel cut down to one clip's fights. That clip has exactly one best
+    /// engagement - HighlightSelector picks the largest, ties broken by the earliest - so naming
+    /// it is honest, where "1 clip compilation" was not.
+    /// </summary>
+    public const string DefaultHighlightsTitle = "{game} - {highlight_full}";
+
     public static string Expand(
         string template,
         string filePath,
@@ -30,7 +37,8 @@ public static class TitleTemplate
         Highlights.Highlight? highlight = null,
         DateTimeOffset? recordedAt = null,
         string? game = null,
-        int? count = null)
+        int? count = null,
+        int? fights = null)
     {
         DateTime timestamp = now ?? DateTime.Now;
         string stem = Path.GetFileNameWithoutExtension(filePath);
@@ -62,6 +70,11 @@ public static class TitleTemplate
             .Replace("{recording_time}", recordingTime)
             // Only a compilation has a count; elsewhere it collapses away with its separators.
             .Replace("{count}", count?.ToString(CultureInfo.InvariantCulture) ?? "")
+            // Fights kept, which is not the same as clips joined. Kept separate from {count} so
+            // a reel spanning three clips cannot claim to be seven clips.
+            .Replace("{fights}", fights?.ToString(CultureInfo.InvariantCulture) ?? "")
+            // Spelled the same as in a file name template, so one vocabulary covers both boxes.
+            .Replace("{clip_name}", stem)
             .Replace("{date}", timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             .Replace("{time}", timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture))
             .Replace("{datetime}", timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
