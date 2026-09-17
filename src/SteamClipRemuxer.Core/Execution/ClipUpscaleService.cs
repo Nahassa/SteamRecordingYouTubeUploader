@@ -46,11 +46,30 @@ public sealed class ClipUpscaleService
     public static readonly TimeSpan DurationTolerance = TimeSpan.FromSeconds(0.5);
 
     /// <summary>
-    /// The structural-similarity floor, measured after scaling the output back to the source's own
-    /// geometry. Chosen against a measured round-trip of 47.2 dB, which is far above this; a result
-    /// below it means the resample or the encode did something other than what was asked.
+    /// The structural-similarity floor, measured at the target resolution against the resample the
+    /// encode was asked to produce.
+    ///
+    /// Calibrated by measurement, on the sample clip, because guessing it is what went wrong the
+    /// first time - 0.98 was taken from a 47.2 dB figure for a bare resample with no encoder in it,
+    /// which left a hundredth of room for the entire encode and rejected every correct result:
+    ///
+    ///   CRF 18, the setting actually shipped ....... 0.9815
+    ///   a nearest-neighbour resample ............... 0.9521
+    ///   CRF 28, 4.7 Mb/s ........................... 0.9342
+    ///   a 2 Mb/s hard cap - the -b:v 0 hazard ...... 0.8909
+    ///   CRF 35, 1.6 Mb/s ........................... 0.8766
+    ///
+    /// 0.95 leaves three hundredths above a correct encode for longer and busier footage, and still
+    /// rejects the failure this check exists for - an encoder ignoring -cq and capping the bitrate -
+    /// by six. CRF is close to content-independent, so the 0.98 should hold on a long clip, and the
+    /// figure is logged on success either way so a result drifting toward the floor is visible.
+    ///
+    /// What this does NOT catch is a colour range flip: full range written as limited measures
+    /// 0.9772 against a correct encode's 0.9815, because SSIM's luminance term is built to be
+    /// invariant to exactly that. The explicit colour comparison in <see cref="Wrong"/> is the guard
+    /// for it. This is a backstop against gross mis-encoding, not a colour or geometry check.
     /// </summary>
-    public const double MinimumSsim = 0.98;
+    public const double MinimumSsim = 0.95;
 
     public ClipUpscaleService(
         IProcessRunner runner,
@@ -213,36 +232,81 @@ public sealed class ClipUpscaleService
     // ------------------------------------------------------------------ SSIM
 
     /// <summary>
-    /// Compares the scaled output against the source, having scaled it back down to the source's
-    /// own geometry so the two are the same shape.
+    /// Compares the scaled output against the picture the encode was asked to produce: the source,
+    /// resampled on the fly by the very same filter, at the target resolution.
     ///
-    /// VMAF would be the better metric and is not available here: it is absent from this FFmpeg
-    /// build, from apt and from PyPI, and the download hosts are blocked. SSIM is what can
-    /// actually be measured, and the floor was set against a measured round-trip rather than
-    /// guessed.
+    /// Two things here were wrong the first time and are worth stating so they are not undone.
+    ///
+    /// The comparison used to happen at the SOURCE's resolution, with the output scaled back down.
+    /// Downsampling averages away the artifacts the check exists to find: measured that way a
+    /// correct encode scored 0.9753 and a deliberately broken nearest-neighbour resample scored
+    /// 0.9752 - a ten-thousandth apart, which is no check at all. Measured here the same pair is
+    /// 0.9815 and 0.9521.
+    ///
+    /// And the frames used to be paired with setpts=PTS-STARTPTS, which pairs by timestamp. The
+    /// scaled MP4 carries timebase 1/15360 and the source 1/1000000, so framesync lined up frames
+    /// that were not the same frame and the answer came back 0.885 instead of 0.975. settb with
+    /// setpts=N pairs by frame index, which is what comparing two versions of one video means.
+    ///
+    /// VMAF would be the better metric and is not obtainable: absent from this FFmpeg build, from
+    /// apt and from PyPI, with the download hosts blocked.
     /// </summary>
     public static IReadOnlyList<string> BuildSsimArguments(
-        string scaledPath, SourceMedia source) => new[]
+        string scaledPath,
+        SourceMedia source,
+        UpscaleTarget target,
+        bool zscaleAvailable = true)
     {
-        "-hide_banner", "-loglevel", "info", "-nostats",
-        "-i", scaledPath,
-        "-i", source.FilePath,
-        "-lavfi",
-        $"[0:v]scale={source.Width}:{source.Height}:flags=lanczos,setpts=PTS-STARTPTS[d];"
-        + "[1:v]setpts=PTS-STARTPTS[r];[d][r]ssim",
-        "-f", "null", "-",
-    };
+        // The reference goes through BuildFilter rather than restating the scale, so the two can
+        // never drift apart - a fallback selects a different input to the one builder, never a
+        // second copy of it. Software's format is asked for so the reference is always
+        // yuv420p10le; FFmpeg reconciles it if the encoded side came out p010le.
+        string reference = BuildFilter(source, target, UpscaleEncoder.Software, zscaleAvailable);
+
+        // Frames are paired by index on both branches. Anchoring the timebase as well keeps
+        // framesync from reintroducing a timestamp comparison behind our backs.
+        const string Pair = "settb=AVTB,setpts=N";
+
+        return new[]
+        {
+            "-hide_banner", "-loglevel", "info", "-nostats",
+            "-i", scaledPath,
+            "-i", source.FilePath,
+            "-lavfi",
+            $"[0:v]{Pair}[d];[1:v]{reference},{Pair}[r];[d][r]ssim",
+            "-f", "null", "-",
+        };
+    }
 
     private static readonly Regex SsimAll = new(
         @"All:\s*(?<value>[0-9]*\.?[0-9]+)", RegexOptions.Compiled);
 
     /// <summary>
+    /// FFmpeg's own warning that the comparison it just performed cannot be trusted.
+    ///
+    /// It printed this on every run of the broken version - "not matching timebases found between
+    /// first input: 1/15360 and second input 1/1000000, results may be incorrect!" - and the parser
+    /// read straight past it to the number, so a misaligned comparison was reported as a quality
+    /// failure and two encoders were blamed for it.
+    /// </summary>
+    private static readonly Regex Untrustworthy = new(
+        @"results may be incorrect|not matching timebases",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
     /// Reads the overall figure out of the ssim filter's summary line, which it writes to stderr
     /// as "SSIM Y:0.99 U:0.99 V:0.99 All:0.99 (20.1)". The last match wins, so a per-frame log
     /// cannot be mistaken for the summary.
+    ///
+    /// Returns nothing when FFmpeg disowned the result, however well-formed the number looks. An
+    /// unmeasurable comparison falls through to uploading the original, which is the right outcome
+    /// for a check that could not be run - reporting a figure FFmpeg has already said is wrong is
+    /// not.
     /// </summary>
     public static double? ParseSsim(string ffmpegOutput)
     {
+        if (Untrustworthy.IsMatch(ffmpegOutput)) return null;
+
         MatchCollection matches = SsimAll.Matches(ffmpegOutput);
         if (matches.Count == 0) return null;
 
@@ -437,7 +501,9 @@ public sealed class ClipUpscaleService
             return UpscaleResult.Nothing("FFmpeg reported success but wrote no output");
 
         SourceMedia scaled = await _probe.ProbeAsync(outputPath, ct).ConfigureAwait(false);
-        double? ssim = await MeasureSsimAsync(outputPath, source, ct).ConfigureAwait(false);
+        double? ssim = await MeasureSsimAsync(
+                outputPath, source, target, zscaleAvailable, ct)
+            .ConfigureAwait(false);
 
         if (Wrong(source, scaled, target, ssim) is { } wrong)
         {
@@ -479,10 +545,16 @@ public sealed class ClipUpscaleService
     }
 
     private async Task<double?> MeasureSsimAsync(
-        string scaledPath, SourceMedia source, CancellationToken ct)
+        string scaledPath,
+        SourceMedia source,
+        UpscaleTarget target,
+        bool zscaleAvailable,
+        CancellationToken ct)
     {
         ProcessResult result = await _runner
-            .RunAsync(_ffmpegPath, BuildSsimArguments(scaledPath, source), ct)
+            .RunAsync(
+                _ffmpegPath,
+                BuildSsimArguments(scaledPath, source, target, zscaleAvailable), ct)
             .ConfigureAwait(false);
 
         // The filter writes its summary to stderr; stdout is checked too so a build that routes

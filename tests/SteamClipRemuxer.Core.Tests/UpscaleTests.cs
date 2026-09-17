@@ -455,12 +455,53 @@ public class UpscaleTests
         Assert.Contains("1 stream(s)", ClipUpscaleService.Wrong(
             Source(), Scaled(streams: 1), Target(), 0.995));
 
-    [Fact]
-    public void Similarity_below_the_floor_is_rejected()
+    [Theory]
+    // The calibration, pinned here rather than left in a commit message. Every figure was measured
+    // on the sample clip, at the target resolution, against the intended resample.
+    [InlineData(0.9815, true, "CRF 18, the setting actually shipped")]
+    [InlineData(0.9342, false, "CRF 28")]
+    [InlineData(0.8909, false, "a 2 Mb/s cap - the -b:v 0 hazard")]
+    [InlineData(0.8766, false, "CRF 35")]
+    public void The_floor_admits_a_correct_encode_and_rejects_a_starved_one(
+        double ssim, bool shouldPass, string what)
     {
-        Assert.Null(ClipUpscaleService.Wrong(Source(), Scaled(), Target(), 0.98));
-        Assert.Contains("under the 0.98 floor", ClipUpscaleService.Wrong(
-            Source(), Scaled(), Target(), 0.97));
+        string? wrong = ClipUpscaleService.Wrong(Source(), Scaled(), Target(), ssim);
+
+        Assert.True(
+            shouldPass == (wrong is null),
+            $"{what} measured {ssim} and was {(wrong is null ? "accepted" : "rejected")}.");
+    }
+
+    [Fact]
+    public void What_the_floor_does_not_catch_is_written_down_rather_than_assumed()
+    {
+        // Two measured cases sit above the floor and are not meant to be caught by it, so neither
+        // is mistaken for coverage later:
+        //
+        //   a nearest-neighbour resample ......... 0.9521
+        //   full range written as limited ........ 0.9772
+        //
+        // The scaler is not a setting - the filter string is built here, so nothing can select
+        // nearest-neighbour - and the range flip is what the explicit colour comparison is for,
+        // SSIM's luminance term being designed to ignore exactly that kind of shift. Raising the
+        // floor to catch either would leave a correct encode almost no room and reject good work,
+        // which is the mistake that started this.
+        Assert.Null(ClipUpscaleService.Wrong(Source(), Scaled(), Target(), 0.9521));
+
+        Assert.Contains(
+            "colour range",
+            ClipUpscaleService.Wrong(Source(), Scaled(colorRange: "tv"), Target(), 0.9772));
+    }
+
+    [Fact]
+    public void The_floor_leaves_room_above_a_correct_encode()
+    {
+        // 0.98 was the original floor and it rejected every correct result, because it came from a
+        // bare-resample figure with no encoder in it. The gap between a correct encode and the
+        // floor is what longer, busier footage has to live in.
+        Assert.True(
+            0.9815 - ClipUpscaleService.MinimumSsim >= 0.025,
+            "a correct encode needs real headroom above the floor, not a hundredth.");
     }
 
     [Fact]
@@ -494,17 +535,99 @@ public class UpscaleTests
         Assert.Null(ClipUpscaleService.ParseSsim("Conversion failed!\n"));
 
     [Fact]
-    public void The_similarity_pass_scales_the_output_back_to_the_sources_own_geometry()
+    public void A_figure_ffmpeg_has_disowned_is_not_a_figure()
     {
-        // Comparing 1920x1080 against 1280x960 directly would measure the resize, not the damage.
-        IReadOnlyList<string> args = ClipUpscaleService.BuildSsimArguments("/tmp/s.mp4", Source());
-        string graph = args[args.ToList().IndexOf("-lavfi") + 1];
+        // FFmpeg printed this on every run of the broken version and the parser read straight past
+        // it to the number, so a misaligned comparison was reported as a quality failure and two
+        // encoders were blamed for it. An unmeasurable result uploads the original instead.
+        const string output =
+            "[Parsed_ssim_3 @ 0x5] not matching timebases found between first input: 1/15360 and "
+            + "second input 1/1000000, results may be incorrect!\n"
+            + "[Parsed_ssim_3 @ 0x5] SSIM Y:0.84 U:0.96 V:0.96 All:0.885259 (9.40)\n";
 
-        Assert.Contains("scale=1280:960", graph);
-        Assert.Contains("ssim", graph);
-        // Distorted first, reference second, both anchored to zero so a start-time offset in the
-        // concatenated source cannot slide the comparison.
-        Assert.Contains("[0:v]", graph);
-        Assert.Contains("setpts=PTS-STARTPTS", graph);
+        Assert.Null(ClipUpscaleService.ParseSsim(output));
+    }
+
+    private static string SsimGraph(SourceMedia? source = null, bool zscale = true)
+    {
+        SourceMedia media = source ?? Source();
+        IReadOnlyList<string> args = ClipUpscaleService.BuildSsimArguments(
+            "/tmp/s.mp4", media, Target(media), zscale);
+
+        return args[args.ToList().IndexOf("-lavfi") + 1];
+    }
+
+    [Fact]
+    public void Frames_are_paired_by_index_on_both_branches()
+    {
+        // Pairing by timestamp is what broke this. The scaled MP4 carries timebase 1/15360 and the
+        // source 1/1000000, so framesync lined up frames that were not the same frame and reported
+        // 0.885 for an encode that actually measured 0.975. Two versions of one video are compared
+        // frame for frame, not clock for clock.
+        string graph = SsimGraph();
+
+        Assert.Equal(2, CountOf(graph, "settb=AVTB"));
+        Assert.Equal(2, CountOf(graph, "setpts=N"));
+        Assert.DoesNotContain("setpts=PTS-STARTPTS", graph);
+    }
+
+    [Fact]
+    public void The_comparison_happens_at_the_target_size_not_the_sources()
+    {
+        // Scaling the output back down to 1280x960 averaged away the very artifacts the check
+        // exists to find: a correct encode scored 0.9753 and a deliberately broken
+        // nearest-neighbour resample scored 0.9752. Measured at the target, the same pair is
+        // 0.9815 and 0.9521.
+        string graph = SsimGraph();
+
+        Assert.Contains("w=1920:h=1080", graph);
+        Assert.DoesNotContain("1280:960", graph);
+        Assert.DoesNotContain("scale=1280", graph);
+    }
+
+    [Fact]
+    public void The_reference_is_the_resample_the_encode_was_asked_to_produce()
+    {
+        // Built through BuildFilter rather than restated, so the two cannot drift - the pair of
+        // filter builders that disagreed about setdar is the defect this avoids.
+        SourceMedia source = Source();
+        string expected = ClipUpscaleService.BuildFilter(
+            source, Target(source), UpscaleEncoder.Software, zscaleAvailable: true);
+
+        Assert.Contains(expected, SsimGraph(source));
+    }
+
+    [Fact]
+    public void The_reference_carries_the_sources_own_colour_so_neither_side_is_re_ranged()
+    {
+        // A limited-range source compared against a full-range reference would measure a colour
+        // conversion that never happened.
+        Assert.Contains("rin=limited:r=limited", SsimGraph(Source(colorRange: "tv")));
+        Assert.Contains("rin=full:r=full", SsimGraph());
+    }
+
+    [Fact]
+    public void The_distorted_file_is_the_first_input_and_the_reference_the_second()
+    {
+        string graph = SsimGraph();
+        Assert.StartsWith("[0:v]", graph);
+        Assert.Contains("[1:v]", graph);
+        Assert.EndsWith("[d][r]ssim", graph);
+    }
+
+    [Fact]
+    public void The_swscale_fallback_reaches_the_reference_branch_too() =>
+        Assert.Contains("scale=1920:1080:flags=lanczos", SsimGraph(zscale: false));
+
+    private static int CountOf(string haystack, string needle)
+    {
+        int count = 0;
+        for (int i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 }

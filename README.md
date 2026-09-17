@@ -281,17 +281,46 @@ covered by a test that reads the bytes back off disk.
 
 Before anything is uploaded the scaled copy is checked against the original: duration within 0.5s,
 frame count equal, display aspect equal, colour range, primaries, transfer and space each equal, bit
-depth not reduced, audio codec and channel count untouched, stream count unchanged, and SSIM at
-least 0.98 after scaling back down. Anything off and the original is uploaded instead — a failed
-upscale costs the upscale, never the upload.
+depth not reduced, audio codec and channel count untouched, stream count unchanged, and a
+similarity floor. Anything off and the original is uploaded instead — a failed upscale costs the
+upscale, never the upload.
 
 Two hazards are handled explicitly. Steam records full range (`color_range=pc`), and `zscale` spells
 that `full` while the output tag spells it `pc`; mixing the two vocabularies is how full-range
 footage comes out tagged limited, crushing every black. And NVENC has a long history of writing `tv`
 regardless of what it was handed — so a hardware result whose range does not match is rejected and
-re-encoded in software rather than accepted. The GPU option is tested by actually encoding with the
-exact flag set, not by grepping `ffmpeg -encoders`, which returns true on machines with no NVIDIA
-card in them.
+re-encoded in software rather than accepted. **That is the explicit colour-range comparison doing the
+work, not the similarity check**: measured, full range written as limited scores 0.9772 against a
+correct encode's 0.9815, because SSIM's luminance term is built to be invariant to exactly that kind
+of shift. The GPU option is tested by actually encoding with the exact flag set, not by grepping
+`ffmpeg -encoders`, which returns true on machines with no NVIDIA card in them.
+
+#### What the similarity check is, and what it took to get right
+
+It compares the encoded output against the picture it was asked to produce — the source, resampled
+by the same filter, at the target resolution — pairing frames by index. The floor is **0.95**,
+calibrated by measurement rather than chosen:
+
+| measured on the sample clip | SSIM |
+| --- | --- |
+| CRF 18, the setting actually shipped | 0.9815 |
+| a nearest-neighbour resample | 0.9521 |
+| CRF 28 (4.7 Mb/s) | 0.9342 |
+| a 2 Mb/s hard cap — the `-b:v 0` hazard | 0.8909 |
+| CRF 35 (1.6 Mb/s) | 0.8766 |
+
+It is a backstop against gross mis-encoding — an encoder that ignored `-cq` and starved the
+bitrate — and not a colour or geometry check; those are the explicit comparisons above.
+
+The first version of this check got all three parts wrong and rejected every correct encode, which
+is worth recording so none of it is undone. It paired frames with `setpts=PTS-STARTPTS`, and since
+the scaled MP4 carries timebase 1/15360 against the source's 1/1000000, `framesync` lined up frames
+that were not the same frame — 0.885 instead of 0.975, with FFmpeg printing *"results may be
+incorrect"* on every run into a parser that read past it. It compared at the *source* resolution,
+scaling the output back down, which averages away the artifacts worth finding: a correct encode
+scored 0.9753 there and a deliberately broken nearest-neighbour resample scored 0.9752. And the 0.98
+floor came from a bare-resample figure with no encoder in it, leaving a hundredth of room for the
+entire encode. FFmpeg's warning now invalidates the measurement instead of being ignored.
 
 Upscaling applies to Steam clips uploaded through the GUI — single clips, compilations and
 highlights reels alike. The CLI's exported-file path uploads verbatim.
