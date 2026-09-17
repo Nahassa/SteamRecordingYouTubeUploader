@@ -38,7 +38,7 @@ range) and variable frame timing are preserved exactly.
 
 ## Requirements
 
-- Windows x64, .NET 8
+- Windows x64, .NET 10
 - `ffmpeg` and `ffprobe` on PATH, or passed with `--ffmpeg` / `--ffprobe`
 
 ## Two sources
@@ -233,7 +233,7 @@ settings live in `%APPDATA%\SteamClipRemuxer`.
 ## Layout
 
 ```
-src/SteamClipRemuxer.Core/    net8.0, no UI reference - the whole pipeline
+src/SteamClipRemuxer.Core/    net10.0, no UI reference - the whole pipeline
 src/SteamClipRemuxer.Cli/     sclip
 src/SteamClipRemuxer.Gui/     WinForms shell
 tests/                       320 tests, no ffmpeg or GPU needed
@@ -246,7 +246,7 @@ while `mediaPresentationDuration` is only the clip's length, so the demuxer comp
 nonsense period and stops after one segment. The segments are concatenated instead, which is
 a byte copy.
 
-Core targets `net8.0` rather than `net8.0-windows` deliberately: a WinForms reference is a
+Core targets `net10.0` rather than `net10.0-windows` deliberately: a WinForms reference is a
 compile error there, not merely bad practice. Commands are built as argument *lists* and
 passed to `ProcessStartInfo.ArgumentList`, so plans can be asserted on directly and paths
 containing quotes or spaces need no escaping.
