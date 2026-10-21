@@ -780,11 +780,24 @@ public sealed class ClipBatchService
                 progress?.Report(new BatchProgress(i, ordered.Count, listing.SuggestedName));
                 _log.Info($"[{i + 1}/{ordered.Count}] {listing.SuggestedName}");
 
+                // Copied out of the loop variable: a closure captures the variable rather than
+                // its value, so reporting would otherwise name whichever clip the loop had
+                // reached by the time the report arrived.
+                int index = i;
+
+                var cutProgress = new Progress<(int Completed, int Total)>(c => progress?.Report(
+                    new BatchProgress(
+                        index, ordered.Count, listing.SuggestedName,
+                        c.Completed >= c.Total
+                            ? "joining the fights"
+                            : $"cutting fight {c.Completed + 1} of {c.Total}",
+                        c.Completed, c.Total)));
+
                 try
                 {
                     ClipHighlightResult cut = await _highlights
                         .CutAsync(listing.Clip, Path.Combine(workspace, $"clip{i:00}"),
-                            options, windowOptions, ct)
+                            options, windowOptions, cutProgress, ct)
                         .ConfigureAwait(false);
 
                     if (cut.Parts.Count == 0)

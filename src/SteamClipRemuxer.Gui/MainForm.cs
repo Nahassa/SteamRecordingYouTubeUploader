@@ -155,7 +155,20 @@ public sealed class MainForm : Form
     private readonly Button _remux = new() { Text = "Remux Selected", Width = 140, Height = 30 };
     private readonly Button _cancel = new() { Text = "Cancel", Width = 90, Height = 30, Enabled = false };
     private readonly Button _selectAll = new() { Text = "Select All", Width = 100, Height = 30 };
+    /// <summary>
+    /// How far through the clip being worked on, not through the batch. A clip can be minutes of
+    /// work, so a bar that only moved between clips looked stopped for most of a run.
+    /// </summary>
     private readonly ProgressBar _progress = new() { Dock = DockStyle.Left, Width = 260 };
+
+    /// <summary>"3/7 clips" - which clip, as a count rather than as a position on the bar.</summary>
+    private readonly Label _clipCount = new()
+    {
+        Dock = DockStyle.Left,
+        Width = 90,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Padding = new Padding(8, 0, 0, 0),
+    };
     private readonly Label _status = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0) };
 
     public MainForm()
@@ -404,7 +417,10 @@ public sealed class MainForm : Form
 
         // --- status ----------------------------------------------------------
         var statusBar = new Panel { Dock = DockStyle.Bottom, Height = 30, Padding = new Padding(8, 4, 8, 4) };
+        // Docked left-to-right in reverse: the last one added sits leftmost, and the Fill'd
+        // status label has to be added first so it takes what is left rather than everything.
         statusBar.Controls.Add(_status);
+        statusBar.Controls.Add(_clipCount);
         statusBar.Controls.Add(_progress);
         _status.BringToFront();
 
@@ -943,17 +959,10 @@ public sealed class MainForm : Form
 
         _cancellation = new CancellationTokenSource();
         SetBusy(true);
-        _progress.Value = 0;
-        _progress.Maximum = selected.Count;
+        ResetProgress(selected.Count);
         ShowLog();
 
-        var progress = new Progress<BatchProgress>(p =>
-        {
-            _progress.Value = Math.Min(p.Completed, _progress.Maximum);
-            SetStatus(p.CurrentFile.Length > 0
-                ? $"{p.Completed + 1}/{p.Total}  {p.CurrentFile}"
-                : $"{p.Total}/{p.Total} done");
-        });
+        var progress = new Progress<BatchProgress>(ShowProgress);
 
         try
         {
@@ -1145,6 +1154,45 @@ public sealed class MainForm : Form
     private void Log(LogLevel level, string message) => _log.Append(level, message);
 
     private void SetStatus(string text) => _status.Text = text;
+
+    /// <summary>Puts the bar back to the start of the first clip.</summary>
+    private void ResetProgress(int clips)
+    {
+        _progress.Style = ProgressBarStyle.Blocks;
+        _progress.Maximum = 1;
+        _progress.Value = 0;
+        _clipCount.Text = clips > 0 ? $"0/{clips} clips" : string.Empty;
+    }
+
+    /// <summary>
+    /// Shows where the run is: the bar for the clip in hand, the count for which clip that is.
+    ///
+    /// Work that cannot be counted - a remux, an upload, an encode - marquees rather than sitting
+    /// at zero, so "nothing to measure" never looks like "nothing happening".
+    /// </summary>
+    private void ShowProgress(BatchProgress p)
+    {
+        if (p.ItemIsMeasured)
+        {
+            _progress.Style = ProgressBarStyle.Blocks;
+            _progress.Maximum = p.StepTotal;
+            _progress.Value = Math.Clamp(p.StepCompleted, 0, p.StepTotal);
+        }
+        else if (p.CurrentFile.Length > 0)
+        {
+            _progress.Style = ProgressBarStyle.Marquee;
+        }
+        else
+        {
+            // Finished: a full bar rather than an empty one that could be read as a failure.
+            _progress.Style = ProgressBarStyle.Blocks;
+            _progress.Maximum = 1;
+            _progress.Value = 1;
+        }
+
+        _clipCount.Text = p.Counted();
+        SetStatus(p.Describe());
+    }
 
     protected override void Dispose(bool disposing)
     {

@@ -235,7 +235,9 @@ public sealed class SettingsForm : Form
         Text = text,
         MaximumSize = new Size(480, 0),
         AutoSize = true,
-        ForeColor = Color.DimGray,
+        // The theme's own secondary text, so a note stays legible in dark mode where a fixed
+        // DimGray would have sunk into the background.
+        ForeColor = SystemColors.GrayText,
         Margin = new Padding(0, 4, 0, 8),
     };
 

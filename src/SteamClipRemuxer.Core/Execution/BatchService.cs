@@ -20,7 +20,47 @@ public sealed record ClipOutcome
     public bool Succeeded => Error is null;
 }
 
-public sealed record BatchProgress(int Completed, int Total, string CurrentFile);
+/// <summary>
+/// How far along a batch is.
+///
+/// Carries a position inside the current item as well as the position within the batch, because
+/// one clip can be several minutes of work and a bar that only moves between clips looks stopped.
+/// The inner count is per item rather than over the whole run on purpose: a clip's work is only
+/// known once its own chunks have been read, so a true total across every clip would mean
+/// assembling all of them before starting any of them.
+/// </summary>
+public sealed record BatchProgress(
+    int Completed,
+    int Total,
+    string CurrentFile,
+    string Stage = "",
+    int StepCompleted = 0,
+    int StepTotal = 0)
+{
+    /// <summary>Whether how far through the current item is actually known.</summary>
+    public bool ItemIsMeasured => StepTotal > 0;
+
+    /// <summary>
+    /// How far through the current item, from 0 to 1. The bar shows this and restarts for each
+    /// clip; which clip it is, is a count rather than a position, so a long clip still has a bar
+    /// that moves.
+    /// </summary>
+    public double ItemFraction =>
+        ItemIsMeasured ? Math.Clamp((double)StepCompleted / StepTotal, 0, 1) : 0;
+
+    /// <summary>"3/7 clips", or what was done once there is no current item.</summary>
+    public string Counted() =>
+        CurrentFile.Length == 0
+            ? $"{Total}/{Total} clips done"
+            : $"{Math.Min(Completed + 1, Total)}/{Total} clips";
+
+    /// <summary>What is happening to the current clip, for the status line beside the count.</summary>
+    public string Describe()
+    {
+        if (CurrentFile.Length == 0) return string.Empty;
+        return Stage.Length == 0 ? CurrentFile : $"{CurrentFile}  -  {Stage}";
+    }
+}
 
 /// <summary>
 /// Runs the whole job for a set of clips: remux losslessly, file the original away, and

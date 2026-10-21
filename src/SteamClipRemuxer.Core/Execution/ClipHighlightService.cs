@@ -98,6 +98,7 @@ public sealed class ClipHighlightService
         string workspace,
         RemuxOptions options,
         HighlightWindowOptions windowOptions,
+        IProgress<(int Completed, int Total)>? cuts = null,
         CancellationToken ct = default)
     {
         Directory.CreateDirectory(workspace);
@@ -164,14 +165,21 @@ public sealed class ClipHighlightService
                 g => ChunkWindows.RoundLabel(g.ToList()),
                 StringComparer.Ordinal);
 
+        // The whole set is known before the first chunk is touched - Plan is pure, so by here the
+        // number of cuts to come is exact rather than estimated, and the caller can show a real
+        // position instead of a spinner.
         var parts = new List<StitchInput>();
         for (int i = 0; i < runs.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
+            cuts?.Report((i, runs.Count));
+
             parts.Add(await CutRunAsync(
                     clip, runs[i], i, source, workspace, options, roundLabels, ct)
                 .ConfigureAwait(false));
         }
+
+        cuts?.Report((runs.Count, runs.Count));
 
         return new ClipHighlightResult { Parts = parts, Runs = runs };
     }
