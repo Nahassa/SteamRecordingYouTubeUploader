@@ -147,9 +147,9 @@ public static class Program
             {
                 FilePath = file,
                 Title = TitleTemplate.Expand(settings.YouTubeTitleTemplate, file,
-                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns),
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns),
                 Description = TitleTemplate.Expand(settings.YouTubeDescriptionTemplate, file,
-                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns),
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns),
                 Tags = settings.ParsedTags,
                 PrivacyStatus = settings.YouTubePrivacyStatus,
                 CategoryId = settings.YouTubeCategoryId,

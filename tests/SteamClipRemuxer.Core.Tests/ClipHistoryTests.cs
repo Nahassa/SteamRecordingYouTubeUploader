@@ -121,7 +121,7 @@ public class YouTubeClipTitleTests
         string title = TitleTemplate.Expand(
             "{filename}",
             "Counter-Strike 2 - 2026-08-28 21-52-42 - Double kill.mp4",
-            removeDateFromFilename: true);
+            titleTimestamp: TitleTimestamp.None);
 
         Assert.Equal("Counter-Strike 2 - Double kill", title);
     }

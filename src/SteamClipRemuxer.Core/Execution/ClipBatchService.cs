@@ -304,7 +304,7 @@ public sealed class ClipBatchService
 
             string title = listing.CustomName ?? TitleTemplate.Expand(
                 settings.YouTubeClipTitleTemplate, remux.OutputPath,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                 highlight: listing.Highlight, recordedAt: listing.RecordedAt,
                 game: listing.GameName);
 
@@ -363,7 +363,7 @@ public sealed class ClipBatchService
                 Title = title,
                 Description = TitleTemplate.Expand(
                     settings.YouTubeDescriptionTemplate, output,
-                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                     highlight: listing.Highlight, recordedAt: listing.RecordedAt,
                     game: listing.GameName),
                 Tags = settings.ParsedTags,
@@ -588,7 +588,7 @@ public sealed class ClipBatchService
         // name, so it is left null and collapses away.
         string title = first.CustomName ?? TitleTemplate.Expand(
             titleTemplate, stitched.OutputPath,
-            settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+            settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
             highlight: included.Count == 1 ? first.Highlight : null,
             recordedAt: first.RecordedAt, game: first.GameName,
             count: included.Count, fights: stitched.Parts.Count);
@@ -670,7 +670,7 @@ public sealed class ClipBatchService
             Description = WithChapters(
                 TitleTemplate.Expand(
                     settings.YouTubeDescriptionTemplate, stitched.OutputPath,
-                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                     highlight: included.Count == 1 ? first.Highlight : null,
                     recordedAt: first.RecordedAt, game: first.GameName,
                     count: included.Count, fights: stitched.Parts.Count),

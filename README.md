@@ -241,6 +241,21 @@ multi-kills naming the same victim twice. Kills are recounted from the individua
 The clip's recorded moment is sent as the video's **recording date**, so the default title
 carries no timestamp at all rather than spending characters on one.
 
+**Timestamp in titles** handles the case where one arrives anyway — a title built from the file
+name inherits whatever the file name carries, and a file name has to carry the time, because that
+is what stops two double kills from one evening colliding. Three choices:
+
+| | `CS2 - 2026-10-20 19-22-36 - Dust2 multikills` becomes |
+| --- | --- |
+| Keep as the template builds it | unchanged |
+| Date only (drop the time) | `CS2 - 2026-10-20 - Dust2 multikills` |
+| Remove date and time | `CS2 - Dust2 multikills` |
+
+It only ever touches the title, never the file on disk. **Date only** is the one to reach for when
+the time differs in every title — which it does, so the literal *Also remove text* box cannot help.
+A scoreline survives it (`Ace 13-9 comeback` has two groups, not three), and so does a date that
+was never followed by a time.
+
 A clip folder names its game only by Steam app id. Counter-Strike 2 is built in; anything
 else is named under **Game names** in settings, as `app id = name` lines.
 

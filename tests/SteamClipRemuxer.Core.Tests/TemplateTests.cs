@@ -105,7 +105,7 @@ public class TitleTemplateTests
     [Fact]
     public void Removes_steam_style_timestamps_when_asked()
     {
-        string result = TitleTemplate.Expand("{filename}", RealFile, removeDateFromFilename: true);
+        string result = TitleTemplate.Expand("{filename}", RealFile, titleTimestamp: TitleTimestamp.None);
         Assert.DoesNotContain("20260808", result);
         Assert.DoesNotContain("104557", result);
         Assert.Contains("Double_kill", result);

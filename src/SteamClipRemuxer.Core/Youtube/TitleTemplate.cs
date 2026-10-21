@@ -31,7 +31,7 @@ public static class TitleTemplate
     public static string Expand(
         string template,
         string filePath,
-        bool removeDateFromFilename = false,
+        TitleTimestamp titleTimestamp = TitleTimestamp.Keep,
         string removeTextPatterns = "",
         DateTime? now = null,
         Highlights.Highlight? highlight = null,
@@ -82,7 +82,13 @@ public static class TitleTemplate
             .Replace("{month}", timestamp.Month.ToString("D2", CultureInfo.InvariantCulture))
             .Replace("{day}", timestamp.Day.ToString("D2", CultureInfo.InvariantCulture));
 
-        if (removeDateFromFilename) result = RemoveDates(result);
+        result = titleTimestamp switch
+        {
+            TitleTimestamp.None => RemoveDates(result),
+            TitleTimestamp.DateOnly => RemoveTimes(result),
+            _ => result,
+        };
+
         if (!string.IsNullOrWhiteSpace(removeTextPatterns)) result = RemovePatterns(result, removeTextPatterns);
 
         return result.Trim();
@@ -113,6 +119,23 @@ public static class TitleTemplate
 
         return Tidy(result);
     }
+
+    /// <summary>
+    /// Strips a time of day and leaves any date where it is.
+    ///
+    /// Deliberately not <see cref="RemoveDates"/> with a flag. That one matches the combined
+    /// "2026-10-20 19-22-36" form first and by design, so a date can never survive it; this runs
+    /// only the lone-time rule the combined one would otherwise have swallowed.
+    ///
+    /// The lookarounds keep a scoreline out of it: "13-9" has two groups rather than three, and a
+    /// digit on either side rules a match out, so "Ace 13-9 comeback" is untouched. A date is safe
+    /// for the same reason - the "26-10-20" inside "2026-10-20" is preceded by a digit.
+    ///
+    /// Steam's own compact "20261020_192236" carries no separators to recognise and is left whole.
+    /// There would be no date left to keep in it anyway, so it is a case for None, not this.
+    /// </summary>
+    public static string RemoveTimes(string input) =>
+        Tidy(Regex.Replace(input, @"(?<!\d)\d{2}[-:]\d{2}[-:]\d{2}(?!\d)", ""));
 
     public static string RemovePatterns(string input, string commaSeparatedPatterns)
     {

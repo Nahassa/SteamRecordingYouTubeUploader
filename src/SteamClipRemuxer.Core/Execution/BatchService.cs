@@ -137,10 +137,10 @@ public sealed class BatchService
             FilePath = output,
             Title = TitleTemplate.Expand(
                 settings.YouTubeTitleTemplate, output,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns),
+                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns),
             Description = TitleTemplate.Expand(
                 settings.YouTubeDescriptionTemplate, output,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns),
+                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns),
             Tags = settings.ParsedTags,
             PrivacyStatus = settings.YouTubePrivacyStatus,
             CategoryId = settings.YouTubeCategoryId,
@@ -291,7 +291,7 @@ public sealed class BatchService
     private static string LabelFor(string path, AppSettings settings)
     {
         string label = TitleTemplate.Expand(
-            "{clip}", path, settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns);
+            "{clip}", path, settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns);
 
         return label.Length > 0 ? label : Path.GetFileNameWithoutExtension(path);
     }
@@ -321,12 +321,12 @@ public sealed class BatchService
             // compilation, so this path has its own.
             Title = TitleTemplate.Expand(
                 TitleTemplate.DefaultCompilationTitle, stitched.OutputPath,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                 recordedAt: recordedAt, game: game.Length > 0 ? game : null, count: stitched.Parts.Count),
             Description = ClipBatchService.WithChapters(
                 TitleTemplate.Expand(
                     settings.YouTubeDescriptionTemplate, stitched.OutputPath,
-                    settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                     recordedAt: recordedAt, count: stitched.Parts.Count),
                 stitched.Parts),
             Tags = settings.ParsedTags,

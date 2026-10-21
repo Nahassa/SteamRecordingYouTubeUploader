@@ -1,4 +1,5 @@
 using SteamClipRemuxer.Core.Configuration;
+using SteamClipRemuxer.Core.Youtube;
 
 namespace SteamClipRemuxer.Gui;
 
@@ -65,7 +66,10 @@ public sealed class SettingsForm : Form
     private readonly TextBox _categoryId = new() { Width = 80 };
     private readonly CheckBox _madeForKids = new() { Text = "Made for kids", AutoSize = true };
     private readonly CheckBox _ageRestricted = new() { Text = "Age restricted (18+)", AutoSize = true };
-    private readonly CheckBox _removeDate = new() { Text = "Strip the timestamp out of titles", AutoSize = true };
+    private readonly ComboBox _titleTimestamp = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 200,
+    };
     private readonly TextBox _removePatterns = new() { Width = 380 };
 
     private readonly ComboBox _upscale = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
@@ -91,6 +95,7 @@ public sealed class SettingsForm : Form
         _aspect.Items.AddRange(new object[] { "16:9", "4:3", "21:9" });
         _privacy.Items.AddRange(new object[] { "private", "unlisted", "public" });
         _upscale.Items.AddRange(new object[] { OffLabel, "1080p", "1440p" });
+        _titleTimestamp.Items.AddRange(new object[] { KeepLabel, DateOnlyLabel, NoneLabel });
 
         var layout = new FlowLayoutPanel
         {
@@ -165,7 +170,13 @@ public sealed class SettingsForm : Form
         layout.Controls.Add(Row("Category id:", _categoryId));
         layout.Controls.Add(_madeForKids);
         layout.Controls.Add(_ageRestricted);
-        layout.Controls.Add(_removeDate);
+        layout.Controls.Add(Row("Timestamp in titles:", _titleTimestamp));
+        layout.Controls.Add(Note(
+            "Only touches the YouTube title, never the file name - a file name keeps its time "
+            + "because that is what stops two clips from one evening sharing a name. 'Date only' "
+            + "turns 'CS2 - 2026-10-20 19-22-36 - Dust2 multikills' into "
+            + "'CS2 - 2026-10-20 - Dust2 multikills'. Use this rather than the box below when the "
+            + "time differs in every title, which it does."));
         layout.Controls.Add(Row("Also remove text:", _removePatterns));
         layout.Controls.Add(Note(
             "Placeholders: {game} {clip} {recording_date} {recording_time} {filename} "
@@ -239,6 +250,24 @@ public sealed class SettingsForm : Form
 
     private const string OffLabel = "Off (upload as recorded)";
 
+    private const string KeepLabel = "Keep as the template builds it";
+    private const string DateOnlyLabel = "Date only (drop the time)";
+    private const string NoneLabel = "Remove date and time";
+
+    private static string LabelFor(TitleTimestamp timestamp) => timestamp switch
+    {
+        TitleTimestamp.DateOnly => DateOnlyLabel,
+        TitleTimestamp.None => NoneLabel,
+        _ => KeepLabel,
+    };
+
+    private static TitleTimestamp TimestampFor(string? label) => label switch
+    {
+        DateOnlyLabel => TitleTimestamp.DateOnly,
+        NoneLabel => TitleTimestamp.None,
+        _ => TitleTimestamp.Keep,
+    };
+
     /// <summary>
     /// The enum's names cannot be shown as they are - a member may not begin with a digit, so
     /// To1080p is what it has to be called in code - and the persisted value is the name, not the
@@ -295,7 +324,8 @@ public sealed class SettingsForm : Form
         _categoryId.Text = _settings.YouTubeCategoryId;
         _madeForKids.Checked = _settings.YouTubeMadeForKids;
         _ageRestricted.Checked = _settings.YouTubeAgeRestricted;
-        _removeDate.Checked = _settings.YouTubeRemoveDateFromFilename;
+        _titleTimestamp.SelectedItem = LabelFor(_settings.YouTubeTitleTimestamp);
+        if (_titleTimestamp.SelectedIndex < 0) _titleTimestamp.SelectedIndex = 0;
         _removePatterns.Text = _settings.YouTubeRemoveTextPatterns;
 
         _upscale.SelectedItem = LabelFor(_settings.YouTubeUpscale);
@@ -343,7 +373,7 @@ public sealed class SettingsForm : Form
         _settings.YouTubeCategoryId = string.IsNullOrWhiteSpace(_categoryId.Text) ? "20" : _categoryId.Text.Trim();
         _settings.YouTubeMadeForKids = _madeForKids.Checked;
         _settings.YouTubeAgeRestricted = _ageRestricted.Checked;
-        _settings.YouTubeRemoveDateFromFilename = _removeDate.Checked;
+        _settings.YouTubeTitleTimestamp = TimestampFor(_titleTimestamp.SelectedItem?.ToString());
         _settings.YouTubeRemoveTextPatterns = _removePatterns.Text;
 
         _settings.YouTubeUpscale = UpscaleFor(_upscale.SelectedItem?.ToString());

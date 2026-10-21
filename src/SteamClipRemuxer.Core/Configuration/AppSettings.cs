@@ -139,7 +139,23 @@ public sealed class AppSettings
     public string YouTubeCategoryId { get; set; } = "20";
     public bool YouTubeMadeForKids { get; set; }
     public bool YouTubeAgeRestricted { get; set; }
+    /// <summary>
+    /// The old form of <see cref="YouTubeTitleTimestamp"/>, kept only so a settings file written
+    /// before the change still loads. Translated once on load and then cleared; nothing reads it.
+    /// </summary>
     public bool YouTubeRemoveDateFromFilename { get; set; }
+
+    /// <summary>
+    /// What happens to a timestamp a title inherited from the file it was built from. See
+    /// <see cref="Youtube.TitleTimestamp"/>.
+    ///
+    /// Worth having separately from the templates because a file name has to carry the time - it
+    /// is what stops two clips from one evening colliding - while a title does not, and a title
+    /// built from {filename} or {clip} cannot drop it by editing the template.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public Youtube.TitleTimestamp YouTubeTitleTimestamp { get; set; } = Youtube.TitleTimestamp.Keep;
+
     public string YouTubeRemoveTextPatterns { get; set; } = string.Empty;
 
     /// <summary>
@@ -170,6 +186,24 @@ public sealed class AppSettings
     public string[] ParsedTags =>
         YouTubeTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    /// <summary>
+    /// Brings a settings file written before a setting changed shape up to date.
+    ///
+    /// The timestamp handling used to be a bool. Changing that property's type outright would have
+    /// made every existing file fail to parse, and <see cref="Load"/> answers a parse failure with
+    /// defaults - so one changed field would have quietly reset every other setting the user had
+    /// ever chosen. The old property stays, is translated once, and is cleared.
+    ///
+    /// Idempotent: a file that is loaded but never saved translates to the same value next time.
+    /// </summary>
+    private void CarryLegacySettingsForward()
+    {
+        if (YouTubeRemoveDateFromFilename && YouTubeTitleTimestamp == Youtube.TitleTimestamp.Keep)
+            YouTubeTitleTimestamp = Youtube.TitleTimestamp.None;
+
+        YouTubeRemoveDateFromFilename = false;
+    }
+
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     /// <summary>Loads settings, falling back to defaults. Never throws; reports trouble through <paramref name="onError"/>.</summary>
@@ -179,7 +213,12 @@ public sealed class AppSettings
         try
         {
             if (!File.Exists(path)) return new AppSettings();
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+
+            AppSettings settings =
+                JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+
+            settings.CarryLegacySettingsForward();
+            return settings;
         }
         catch (Exception ex)
         {
