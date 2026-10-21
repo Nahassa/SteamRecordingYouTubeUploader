@@ -84,9 +84,11 @@ public sealed class SettingsForm : Form
         _settings = settings;
 
         Text = "Settings";
-        // Taller than the content needs on purpose: the naming block is six rows, and a form
-        // that opens mid-scroll is how a setting goes unnoticed. AutoScroll still covers the rest.
-        Size = new Size(560, 760);
+        // Tabs rather than one scrolling column: thirty-odd controls in a single run meant the
+        // thing you wanted was usually off-screen, and a setting you cannot see is a setting you
+        // do not know you have. Each tab fits without scrolling at this size.
+        Size = new Size(600, 620);
+        MinimumSize = new Size(520, 480);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.SizableToolWindow;
         MinimizeBox = false;
@@ -97,107 +99,93 @@ public sealed class SettingsForm : Form
         _upscale.Items.AddRange(new object[] { OffLabel, "1080p", "1440p" });
         _titleTimestamp.Items.AddRange(new object[] { KeepLabel, DateOnlyLabel, NoneLabel });
 
-        var layout = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            AutoScroll = true,
-            Padding = new Padding(12),
-        };
+        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
 
-        layout.Controls.Add(Header("Output"));
-        layout.Controls.Add(Row("Display aspect to tag:", _aspect));
-        layout.Controls.Add(_moveProcessed);
-        layout.Controls.Add(_fastStart);
-        layout.Controls.Add(Note(
-            "The video stream is always copied, never re-encoded, so there is nothing to "
-            + "configure for quality. Output is bit-identical to the recording."));
+        tabs.TabPages.Add(Page("Output",
+            Row("Display aspect to tag:", _aspect),
+            _moveProcessed,
+            _fastStart,
+            Note("The video stream is always copied, never re-encoded, so there is nothing to "
+                + "configure for quality. Output is bit-identical to the recording.")));
 
-        layout.Controls.Add(Header("Steam clips"));
-        layout.Controls.Add(Row("Include clips shorter than (s):", _maxClipSeconds));
-        layout.Controls.Add(Note(
-            "Only clips shorter than this are included; a clip of exactly this length is left "
-            + "out. Steam writes an untouched clip at exactly the recording buffer length, so "
-            + "set this to the buffer length configured in Steam (120 by default) and every "
-            + "untouched clip is excluded while anything you cropped is kept."));
-        layout.Controls.Add(_includeLong);
-        layout.Controls.Add(Note(
-            "Brings the untouched clips back into the list. They are mostly footage you did not "
-            + "ask for, which is what 'Kill highlights only' on the main window is for."));
-        layout.Controls.Add(_respectCrop);
-        layout.Controls.Add(Note(
-            "Steam's crop point usually falls mid-GOP, so the cut lands on the nearest earlier "
-            + "keyframe. Either way the video is copied, never re-encoded; unticking keeps whole "
-            + "segments and a little more footage than you cropped."));
-        layout.Controls.Add(_skipProcessed);
-        layout.Controls.Add(Row("Keep before each kill (s):", _highlightLead));
-        layout.Controls.Add(Row("Keep after each kill (s):", _highlightTail));
-        layout.Controls.Add(Note(
-            "Used by 'Kill highlights only'. Both snap outward to Steam's three-second chunks: "
-            + "Steam writes one keyframe per chunk, so three seconds is the finest a lossless "
-            + "cut can manage."));
+        tabs.TabPages.Add(Page("Clips",
+            Row("Include clips shorter than (s):", _maxClipSeconds),
+            Note("Only clips shorter than this are included; a clip of exactly this length is "
+                + "left out. Steam writes an untouched clip at exactly the recording buffer "
+                + "length, so set this to the buffer length configured in Steam (120 by default) "
+                + "and every untouched clip is excluded while anything you cropped is kept."),
+            _includeLong,
+            Note("Brings the untouched clips back into the list. They are mostly footage you did "
+                + "not ask for, which is what 'Kill highlights only' on the main window is for."),
+            _respectCrop,
+            Note("Steam's crop point usually falls mid-GOP, so the cut lands on the nearest "
+                + "earlier keyframe. Either way the video is copied, never re-encoded; unticking "
+                + "keeps whole segments and a little more footage than you cropped."),
+            _skipProcessed,
+            Header("Kill highlights"),
+            Row("Keep before each kill (s):", _highlightLead),
+            Row("Keep after each kill (s):", _highlightTail),
+            Note("Both snap outward to Steam's three-second chunks: Steam writes one keyframe per "
+                + "chunk, so three seconds is the finest a lossless cut can manage.")));
 
-        layout.Controls.Add(Row("Clip file name:", _clipFileName));
-        layout.Controls.Add(Row("Clip YouTube title:", _clipTitle));
-        layout.Controls.Add(Row("Compilation file name:", _compilationFileName));
-        layout.Controls.Add(Row("Compilation YouTube title:", _compilationTitle));
-        layout.Controls.Add(Row("Highlights file name:", _highlightsFileName));
-        layout.Controls.Add(Row("Highlights YouTube title:", _highlightsTitle));
-        layout.Controls.Add(Note(
-            "Placeholders: {game} {recording_date} {recording_time} {highlight} {highlight_full} "
-            + "{weapon} {map} {mode} {round} {kills} {count} {fights} {clip_name}"));
-        layout.Controls.Add(Note(
-            "{count} is clips joined and {fights} is fights kept - a reel from three clips can "
-            + "hold seven fights. {clip_name} is the clip's own file name, so a highlights reel "
-            + "follows whatever the clip file name is set to. {highlight}, {weapon}, {map} and "
-            + "{round} describe one clip, so they are empty on anything spanning several; the "
-            + "name closes up around them rather than leaving a gap. Renaming a clip in the list "
-            + "beats every box here."));
+        tabs.TabPages.Add(Page("Naming",
+            Row("Clip file name:", _clipFileName),
+            Row("Clip YouTube title:", _clipTitle),
+            Row("Compilation file name:", _compilationFileName),
+            Row("Compilation YouTube title:", _compilationTitle),
+            Row("Highlights file name:", _highlightsFileName),
+            Row("Highlights YouTube title:", _highlightsTitle),
+            Note("Placeholders: {game} {recording_date} {recording_time} {highlight} "
+                + "{highlight_full} {weapon} {map} {mode} {round} {kills} {count} {fights} "
+                + "{clip_name}"),
+            Note("{count} is clips joined and {fights} is fights kept - a reel from three clips "
+                + "can hold seven fights. {clip_name} is the clip's own file name, so a "
+                + "highlights reel follows whatever the clip file name is set to. {highlight}, "
+                + "{weapon}, {map} and {round} describe one clip, so they are empty on anything "
+                + "spanning several; the name closes up around them rather than leaving a gap. "
+                + "Renaming a clip in the list beats every box here."),
+            Header("Game names"),
+            Row("Game names:", _gameNames),
+            Note("One per line, as 'app id = name', for example '730 = Counter-Strike 2'. A Steam "
+                + "clip folder names its game only by id, so a game with no entry here is called "
+                + "'App 440'. Counter-Strike 2 is built in; anything set here wins over that.")));
 
-        layout.Controls.Add(Row("Game names:", _gameNames));
-        layout.Controls.Add(Note(
-            "One per line, as 'app id = name', for example '730 = Counter-Strike 2'. A Steam clip "
-            + "folder names its game only by id, so a game with no entry here is called "
-            + "'App 440'. Counter-Strike 2 is built in; anything set here wins over that."));
+        tabs.TabPages.Add(Page("YouTube",
+            _uploadEnabled,
+            Row("Title:", _title),
+            Row("Description:", _description),
+            Row("Tags (comma separated):", _tags),
+            Row("Privacy:", _privacy),
+            Row("Category id:", _categoryId),
+            _madeForKids,
+            _ageRestricted,
+            Note("Placeholders: {game} {clip} {recording_date} {recording_time} {filename} "
+                + "{filename_ext} {date} {time} {datetime} {year} {month} {day}"),
+            Header("Trimming titles"),
+            Row("Timestamp in titles:", _titleTimestamp),
+            Note("Only touches the YouTube title, never the file name - a file name keeps its "
+                + "time because that is what stops two clips from one evening sharing a name. "
+                + "'Date only' turns 'CS2 - 2026-10-20 19-22-36 - Dust2 multikills' into "
+                + "'CS2 - 2026-10-20 - Dust2 multikills'. Use this rather than the box below when "
+                + "the time differs in every title, which it does."),
+            Row("Also remove text:", _removePatterns),
+            Note($"Credentials and sign-in tokens live in {AppPaths.DataDirectory}")));
 
-        layout.Controls.Add(Header("YouTube"));
-        layout.Controls.Add(_uploadEnabled);
-        layout.Controls.Add(Row("Title:", _title));
-        layout.Controls.Add(Row("Description:", _description));
-        layout.Controls.Add(Row("Tags (comma separated):", _tags));
-        layout.Controls.Add(Row("Privacy:", _privacy));
-        layout.Controls.Add(Row("Category id:", _categoryId));
-        layout.Controls.Add(_madeForKids);
-        layout.Controls.Add(_ageRestricted);
-        layout.Controls.Add(Row("Timestamp in titles:", _titleTimestamp));
-        layout.Controls.Add(Note(
-            "Only touches the YouTube title, never the file name - a file name keeps its time "
-            + "because that is what stops two clips from one evening sharing a name. 'Date only' "
-            + "turns 'CS2 - 2026-10-20 19-22-36 - Dust2 multikills' into "
-            + "'CS2 - 2026-10-20 - Dust2 multikills'. Use this rather than the box below when the "
-            + "time differs in every title, which it does."));
-        layout.Controls.Add(Row("Also remove text:", _removePatterns));
-        layout.Controls.Add(Note(
-            "Placeholders: {game} {clip} {recording_date} {recording_time} {filename} "
-            + "{filename_ext} {date} {time} {datetime} {year} {month} {day}"));
-
-        layout.Controls.Add(Row("Upscale for YouTube:", _upscale));
-        layout.Controls.Add(_useHardware);
-        layout.Controls.Add(Note(
-            "Steam records 1280x960, which displays as 1706x960 - and 960 lines falls between "
-            + "YouTube's 720 and 1080 rungs, so YouTube only ever builds 720p for it. Scaling to "
-            + "1080 measured 2.37 dB better than the 720 rung, against 0.78 dB for simply giving "
-            + "720p more bitrate, so most of the gain is the rung rather than the bits."));
-        layout.Controls.Add(Note(
-            "This is the one place anything is re-encoded, and only the copy sent to YouTube is: "
-            + "the file kept on disk stays bit-identical to the recording. The scaled copy is "
-            + "checked against the original before it is uploaded - geometry, colour, audio, "
-            + "frame count and a similarity floor - and if anything is off, the original is "
-            + "uploaded instead. The GPU option is tested by actually encoding with it, and falls "
-            + "back to software if the card or this FFmpeg build cannot; it is a speed setting, "
-            + "worth about 0.19 dB either way."));
-        layout.Controls.Add(Note($"Credentials and sign-in tokens live in {AppPaths.DataDirectory}"));
+        tabs.TabPages.Add(Page("Upscale",
+            Row("Upscale for YouTube:", _upscale),
+            _useHardware,
+            Note("Steam records 1280x960, which displays as 1706x960 - and 960 lines falls "
+                + "between YouTube's 720 and 1080 rungs, so YouTube only ever builds 720p for it. "
+                + "Scaling to 1080 measured 2.37 dB better than the 720 rung, against 0.78 dB for "
+                + "simply giving 720p more bitrate, so most of the gain is the rung rather than "
+                + "the bits."),
+            Note("This is the one place anything is re-encoded, and only the copy sent to YouTube "
+                + "is: the file kept on disk stays bit-identical to the recording. The scaled "
+                + "copy is checked against the original before it is uploaded - geometry, colour, "
+                + "audio, frame count and a similarity floor - and if anything is off, the "
+                + "original is uploaded instead. The GPU option is tested by actually encoding "
+                + "with it, and falls back to software if the card or this FFmpeg build cannot; "
+                + "it is a speed setting, worth about 0.19 dB either way.")));
 
         var buttons = new FlowLayoutPanel
         {
@@ -215,9 +203,9 @@ public sealed class SettingsForm : Form
         AcceptButton = ok;
         CancelButton = cancel;
 
-        Controls.Add(layout);
+        Controls.Add(tabs);
         Controls.Add(buttons);
-        layout.BringToFront();
+        tabs.BringToFront();
 
         ApplyToUi();
     }
@@ -241,13 +229,64 @@ public sealed class SettingsForm : Form
         Margin = new Padding(0, 4, 0, 8),
     };
 
-    private static Panel Row(string label, Control control)
+    /// <summary>
+    /// A labelled control, in two columns that actually line up.
+    ///
+    /// The previous version placed the control at a fixed x inside a fixed-width Panel - 180 plus
+    /// a 380-wide box inside 500 - so every row overflowed its own container by sixty pixels and
+    /// only looked right because nothing clipped it. The same class of mistake as the button row
+    /// that hid its own controls, so it is laid out rather than positioned.
+    /// </summary>
+    private static TableLayoutPanel Row(string label, Control control)
     {
-        var panel = new Panel { Height = 28, Width = 500, Margin = new Padding(0, 2, 0, 2) };
-        panel.Controls.Add(new Label { Text = label, AutoSize = true, Location = new Point(0, 6) });
-        control.Location = new Point(180, 2);
-        panel.Controls.Add(control);
-        return panel;
+        var row = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 2, 0, 2),
+        };
+
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelWidth));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        row.Controls.Add(
+            new Label
+            {
+                Text = label,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 6, 8, 0),
+            },
+            0, 0);
+
+        control.Margin = new Padding(0, 2, 0, 2);
+        row.Controls.Add(control, 1, 0);
+
+        return row;
+    }
+
+    /// <summary>Wide enough for the longest label here, "Compilation YouTube title:".</summary>
+    private const int LabelWidth = 190;
+
+    /// <summary>One tab, scrolling only if the window is made small enough to need it.</summary>
+    private static TabPage Page(string name, params Control[] contents)
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+            Padding = new Padding(12),
+        };
+
+        panel.Controls.AddRange(contents);
+
+        var page = new TabPage(name) { Padding = new Padding(4), UseVisualStyleBackColor = true };
+        page.Controls.Add(panel);
+        return page;
     }
 
     private const string OffLabel = "Off (upload as recorded)";
