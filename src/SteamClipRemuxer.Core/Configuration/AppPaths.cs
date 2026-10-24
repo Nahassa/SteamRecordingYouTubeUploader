@@ -20,5 +20,11 @@ public static class AppPaths
     /// </summary>
     public static string ProcessedClipsFile => Path.Combine(DataDirectory, "processed_clips.json");
 
+    /// <summary>
+    /// Names the user has given clips, overriding the generated one. Separate from the processed
+    /// log because naming a clip says nothing about having handled it.
+    /// </summary>
+    public static string ClipNamesFile => Path.Combine(DataDirectory, "clip_names.json");
+
     public static void EnsureCreated() => Directory.CreateDirectory(DataDirectory);
 }

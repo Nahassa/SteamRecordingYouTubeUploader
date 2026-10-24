@@ -40,6 +40,13 @@ public sealed record ProcessedClip
     public DateTimeOffset? RemuxedAt { get; init; }
     public DateTimeOffset? UploadedAt { get; init; }
 
+    /// <summary>
+    /// Whether the output was cut down to the clip's fights rather than being the whole clip.
+    /// Absent from logs written before the cut existed, which deserialise as false - honest
+    /// enough, since those runs were whole clips.
+    /// </summary>
+    public bool CutToHighlights { get; init; }
+
     /// <summary>Set once the clip reached YouTube, so the log doubles as a record of what is up there.</summary>
     public string? YouTubeVideoId { get; init; }
 
@@ -62,10 +69,20 @@ public sealed class ProcessedClipLog
 {
     private readonly Dictionary<string, ProcessedClip> _entries;
 
+    /// <summary>
+    /// Where this log came from, so <see cref="Save"/> puts it back there.
+    ///
+    /// Without this a log loaded from one file saved itself to the default one, which is fine in
+    /// the app - it only ever uses the default - and wrong anywhere else.
+    /// </summary>
+    private readonly string? _path;
+
     public ProcessedClipLog() : this(Array.Empty<ProcessedClip>()) { }
 
-    public ProcessedClipLog(IEnumerable<ProcessedClip> entries)
+    public ProcessedClipLog(IEnumerable<ProcessedClip> entries, string? path = null)
     {
+        _path = path;
+
         _entries = entries
             .Where(e => !string.IsNullOrWhiteSpace(e.Id))
             .GroupBy(e => e.Id, StringComparer.Ordinal)
@@ -106,7 +123,7 @@ public sealed class ProcessedClipLog
 
     public void MarkRemuxed(
         string id, string clipFolder, string title,
-        string outputPath = "", DateTimeOffset? recordedAt = null)
+        string outputPath = "", DateTimeOffset? recordedAt = null, bool cutToHighlights = false)
     {
         ProcessedClip existing = Find(id) ?? new ProcessedClip { Id = id };
         _entries[id] = existing with
@@ -116,6 +133,7 @@ public sealed class ProcessedClipLog
             OutputPath = outputPath,
             RecordedAt = recordedAt ?? existing.RecordedAt,
             RemuxedAt = DateTimeOffset.UtcNow,
+            CutToHighlights = cutToHighlights,
         };
     }
 
@@ -150,11 +168,11 @@ public sealed class ProcessedClipLog
 
         try
         {
-            if (!File.Exists(path)) return new ProcessedClipLog();
+            if (!File.Exists(path)) return new ProcessedClipLog(Array.Empty<ProcessedClip>(), path);
 
             List<ProcessedClip>? entries =
                 JsonSerializer.Deserialize<List<ProcessedClip>>(File.ReadAllText(path), Options);
-            return new ProcessedClipLog(entries ?? new List<ProcessedClip>());
+            return new ProcessedClipLog(entries ?? new List<ProcessedClip>(), path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -170,11 +188,11 @@ public sealed class ProcessedClipLog
     /// </summary>
     public void Save(string? path = null, Action<string>? onError = null)
     {
-        path ??= AppPaths.ProcessedClipsFile;
+        path ??= _path ?? AppPaths.ProcessedClipsFile;
 
         try
         {
-            AppPaths.EnsureCreated();
+            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? AppPaths.DataDirectory);
 
             string temporary = path + ".tmp";
             List<ProcessedClip> ordered = _entries.Values

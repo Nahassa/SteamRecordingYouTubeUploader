@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -10,6 +10,12 @@
     <Product>Steam Clip Remuxer</Product>
     <!-- Lets the solution build (and therefore be checked) on non-Windows hosts. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!--
+      Scale per monitor rather than once at launch. Without this a window dragged from a 4K
+      display to a 1080p one is redrawn by the compositor and comes out blurred, which is the
+      usual reason a WinForms app looks dated before anyone reads a word of it.
+    -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SteamClipRemuxer.Core/SteamClipRemuxer.Core.csproj" />

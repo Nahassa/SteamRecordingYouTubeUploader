@@ -21,11 +21,29 @@ public static class ClipNaming
     /// </summary>
     public const string DefaultTemplate = "{game} - {recording_date} {recording_time} - {highlight}";
 
+    /// <summary>
+    /// Default layout for a compilation. It has no single highlight to name, so the moment of
+    /// the earliest clip in it stands in - which keeps the name stable if the same set is built
+    /// again.
+    /// </summary>
+    public const string DefaultCompilationTemplate =
+        "{game} - Compilation - {recording_date} {recording_time} ({count} clips)";
+
+    /// <summary>
+    /// Default layout for a reel cut down to one clip's fights. Built from the clip's own name
+    /// rather than from {game} and a timestamp, so a reel sits next to the clip it came from
+    /// however the clip file name template has been changed.
+    /// </summary>
+    public const string DefaultHighlightsTemplate = "{clip_name} - Highlights";
+
     public static string Expand(
         string template,
         string game,
         DateTimeOffset recordedAt,
-        Highlight? highlight)
+        Highlight? highlight,
+        int? count = null,
+        string? clipName = null,
+        int? fights = null)
     {
         string result = template
             .Replace("{game}", game)
@@ -39,7 +57,15 @@ public static class ClipNaming
             .Replace("{map}", highlight?.Map ?? string.Empty)
             .Replace("{mode}", highlight?.Mode ?? string.Empty)
             .Replace("{round}", highlight?.Round?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)
-            .Replace("{kills}", highlight?.KillCount.ToString(CultureInfo.InvariantCulture) ?? "0");
+            .Replace("{kills}", highlight?.KillCount.ToString(CultureInfo.InvariantCulture) ?? "0")
+            // Only a compilation has a count; elsewhere it collapses away with its separators.
+            .Replace("{count}", count?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)
+            // The clip's own file name, as the clip file name template produced it. Only a reel
+            // cut from a single clip has one.
+            .Replace("{clip_name}", clipName ?? string.Empty)
+            // Fights kept, which is not the same as clips joined: a reel spanning three clips
+            // can hold seven fights, so {count} and {fights} are deliberately separate.
+            .Replace("{fights}", fights?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
 
         return Sanitise(result);
     }
@@ -50,9 +76,7 @@ public static class ClipNaming
     /// </summary>
     public static string Sanitise(string name)
     {
-        var cleaned = new string(name
-            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? ' ' : c)
-            .ToArray());
+        var cleaned = new string(name.Select(c => Forbidden(c) ? ' ' : c).ToArray());
 
         // Collapse the gaps a blank placeholder leaves behind, so an absent weapon does not
         // produce "Counter-Strike 2 -  - Double kill".
@@ -62,4 +86,17 @@ public static class ClipNaming
 
         return cleaned.Length == 0 ? "Clip" : cleaned;
     }
+
+    /// <summary>
+    /// Whether a character cannot appear in a file name.
+    ///
+    /// Windows' own set is spelled out rather than taken only from
+    /// <see cref="Path.GetInvalidFileNameChars"/>, because that call answers for the machine it
+    /// runs on: on Linux it is just NUL and '/', so a name carrying a colon would sail through
+    /// the tests and then fail to write on the Windows machine the app actually runs on.
+    /// </summary>
+    private static bool Forbidden(char c) =>
+        c < 32 || WindowsInvalid.Contains(c) || Path.GetInvalidFileNameChars().Contains(c);
+
+    private static readonly char[] WindowsInvalid = { '<', '>', ':', '"', '/', '\\', '|', '?', '*' };
 }

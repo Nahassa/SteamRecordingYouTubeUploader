@@ -123,7 +123,11 @@ public class ClipManifestTests
         // otherwise be named "App 730".
         ClipManifest m = Load("clip_cropped_7435ms.pb");
         Assert.Equal(730, m.AppId);
-        Assert.Equal("Counter-Strike 2", m.GameName);
+
+        // Resolved through SteamApps with the user's list in scope, never off the manifest
+        // alone - a name they have set has to win.
+        Assert.Equal("Counter-Strike 2", SteamApps.NameFor(m.AppId));
+        Assert.Equal("CS2", SteamApps.NameFor(m.AppId, new Dictionary<string, string> { ["730"] = "CS2" }));
     }
 
     [Fact]

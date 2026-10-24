@@ -176,4 +176,49 @@ public class ProcessedClipLogTests
 
         Assert.NotEqual(a.Id, b.Id);
     }
+
+    [Fact]
+    public void Whether_a_clip_was_cut_to_highlights_survives_a_save_and_load()
+    {
+        string path = TempFile();
+        try
+        {
+            var log = new ProcessedClipLog();
+            log.MarkRemuxed("cut", "clip_730_1", "Ace", "C:/out/a.mp4", cutToHighlights: true);
+            log.MarkRemuxed("whole", "clip_730_2", "Double kill", "C:/out/b.mp4");
+            log.Save(path);
+
+            ProcessedClipLog reloaded = ProcessedClipLog.Load(path);
+
+            Assert.True(reloaded.Find("cut")!.CutToHighlights);
+            Assert.False(reloaded.Find("whole")!.CutToHighlights);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void A_log_written_before_the_flag_existed_reads_as_a_whole_clip()
+    {
+        // Those runs were whole clips, so false is the honest answer rather than a guess.
+        string path = TempFile();
+        try
+        {
+            File.WriteAllText(path, """
+                [{"Id":"old","ClipFolder":"clip_730_1","Title":"Ace",
+                  "OutputPath":"C:/out/a.mp4","RemuxedAt":"2026-08-28T21:52:42+00:00"}]
+                """);
+
+            ProcessedClip entry = ProcessedClipLog.Load(path).Find("old")!;
+
+            Assert.False(entry.CutToHighlights);
+            Assert.Equal(ClipState.Remuxed, entry.State);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
 }

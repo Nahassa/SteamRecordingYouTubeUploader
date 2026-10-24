@@ -41,6 +41,8 @@ public static class HighlightSelector
         "cs2_double_kill", "cs2_multi_kill",
     };
 
+    private const string DeathIcon = "cs2_death";
+
     private sealed record Kill(TimeSpan Time, string? Weapon);
 
     /// <summary>
@@ -49,13 +51,7 @@ public static class HighlightSelector
     /// </summary>
     public static Highlight? Select(SessionTimeline timeline, TimeSpan start, TimeSpan end)
     {
-        // A labelled multi-kill carries its own duration and can begin just before the clip while
-        // still being what the clip is about, so the search reaches back by one engagement.
-        List<TimelineEntry> candidates = timeline.Entries
-            .Where(e => e.Type == "event" && e.End >= start - EngagementWindow && e.Time <= end)
-            .ToList();
-
-        List<Kill> kills = candidates.SelectMany(ToKills).OrderBy(k => k.Time).ToList();
+        List<TimelineEntry> candidates = Candidates(timeline, start, end);
 
         bool planted = candidates.Any(e =>
             e.Icon.Equals("cs2_bomb_plant", StringComparison.OrdinalIgnoreCase) &&
@@ -69,7 +65,9 @@ public static class HighlightSelector
         string? mode = timeline.ModeAt(start);
         int? round = timeline.RoundAt(start);
 
-        if (kills.Count == 0)
+        IReadOnlyList<Engagement> fights = Cluster(candidates, timeline);
+
+        if (fights.Count == 0)
         {
             // Still worth a title if the player did something else notable in the window.
             if (!planted && !defused) return null;
@@ -85,22 +83,15 @@ public static class HighlightSelector
             };
         }
 
-        List<Kill> best = BestEngagement(kills);
-
-        // Only claim a weapon when every kill in the engagement used the same one: "Double kill
-        // with the AK-47" is wrong if half of it was a grenade, and equally wrong if Steam
-        // recorded no weapon for part of it.
-        bool everyKillNamesAWeapon = best.All(k => !string.IsNullOrEmpty(k.Weapon));
-        string[] distinctWeapons = best
-            .Select(k => k.Weapon)
-            .Where(w => !string.IsNullOrEmpty(w))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray()!;
+        Engagement best = fights
+            .OrderByDescending(f => f.KillCount)
+            .ThenBy(f => f.FirstKill)
+            .First();
 
         return new Highlight
         {
-            KillCount = best.Count,
-            Weapon = everyKillNamesAWeapon && distinctWeapons.Length == 1 ? distinctWeapons[0] : null,
+            KillCount = best.KillCount,
+            Weapon = best.Weapon,
             Map = map,
             Mode = mode,
             Round = round,
@@ -109,26 +100,95 @@ public static class HighlightSelector
         };
     }
 
-    /// <summary>The largest cluster of kills falling within one engagement window of each other.</summary>
-    private static List<Kill> BestEngagement(List<Kill> kills)
+    /// <summary>
+    /// Every fight in the clip, oldest first.
+    ///
+    /// <see cref="Select"/> only wants the largest, but cutting a clip down to its kills needs
+    /// all of them. Both go through the same clustering, so the reel can never disagree with the
+    /// title about what happened.
+    /// </summary>
+    public static IReadOnlyList<Engagement> Engagements(
+        SessionTimeline timeline, TimeSpan start, TimeSpan end) =>
+        Cluster(Candidates(timeline, start, end), timeline);
+
+    /// <summary>
+    /// When the player died, oldest first.
+    ///
+    /// Never opens a window - dying is not a highlight - but it is worth knowing about, so a
+    /// reel can be made to stop before it rather than closing on the player getting killed.
+    /// Steam writes the player's own death as "You were killed by ...", and everyone else's
+    /// death under the same icon, so the title has to be read rather than the icon alone.
+    /// </summary>
+    public static IReadOnlyList<TimeSpan> Deaths(
+        SessionTimeline timeline, TimeSpan start, TimeSpan end) =>
+        timeline.Entries
+            .Where(e => e.Type == "event"
+                && e.Icon.Equals(DeathIcon, StringComparison.OrdinalIgnoreCase)
+                && e.Title.StartsWith("You were killed", StringComparison.OrdinalIgnoreCase)
+                && e.Time >= start && e.Time <= end)
+            .Select(e => e.Time)
+            .OrderBy(t => t)
+            .ToList();
+
+    /// <summary>
+    /// The events that could bear on a clip covering [start, end). A labelled multi-kill carries
+    /// its own duration and can begin just before the clip while still being what the clip is
+    /// about, so the search reaches back by one engagement.
+    /// </summary>
+    private static List<TimelineEntry> Candidates(
+        SessionTimeline timeline, TimeSpan start, TimeSpan end) =>
+        timeline.Entries
+            .Where(e => e.Type == "event" && e.End >= start - EngagementWindow && e.Time <= end)
+            .ToList();
+
+    /// <summary>Groups kills into fights, splitting wherever a gap exceeds the engagement window.</summary>
+    private static IReadOnlyList<Engagement> Cluster(
+        IReadOnlyList<TimelineEntry> candidates, SessionTimeline timeline)
     {
-        var clusters = new List<List<Kill>>();
+        List<Kill> kills = candidates.SelectMany(ToKills).OrderBy(k => k.Time).ToList();
+        if (kills.Count == 0) return Array.Empty<Engagement>();
+
+        var fights = new List<Engagement>();
         var current = new List<Kill>();
 
         foreach (Kill kill in kills)
         {
             if (current.Count > 0 && kill.Time - current[^1].Time > EngagementWindow)
             {
-                clusters.Add(current);
+                fights.Add(Build(current, timeline));
                 current = new List<Kill>();
             }
 
             current.Add(kill);
         }
 
-        if (current.Count > 0) clusters.Add(current);
+        if (current.Count > 0) fights.Add(Build(current, timeline));
 
-        return clusters.OrderByDescending(c => c.Count).ThenBy(c => c[0].Time).First();
+        return fights;
+    }
+
+    private static Engagement Build(List<Kill> fight, SessionTimeline timeline)
+    {
+        // Only claim a weapon when every kill in the fight used the same one: "Double kill with
+        // the AK-47" is wrong if half of it was a grenade, and equally wrong if Steam recorded no
+        // weapon for part of it.
+        bool everyKillNamesAWeapon = fight.All(k => !string.IsNullOrEmpty(k.Weapon));
+        string[] distinctWeapons = fight
+            .Select(k => k.Weapon)
+            .Where(w => !string.IsNullOrEmpty(w))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()!;
+
+        return new Engagement
+        {
+            FirstKill = fight[0].Time,
+            LastKill = fight[^1].Time,
+            KillCount = fight.Count,
+            Weapon = everyKillNamesAWeapon && distinctWeapons.Length == 1 ? distinctWeapons[0] : null,
+            // The round the fight started in; a fight that straddles a boundary belongs to the
+            // round it began in, which is where its footage is.
+            Round = timeline.RoundAt(fight[0].Time),
+        };
     }
 
     /// <summary>

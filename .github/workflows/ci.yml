@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       # Restoring the test project pulls Core in through its ProjectReference.
       # MSBuild accepts one project per invocation, so naming both here fails
@@ -65,14 +65,15 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore
         run: dotnet restore SteamClipRemuxer.sln
 
-      # The Linux SDK omits the WindowsDesktop targeting pack, so this is the only
-      # place the WinForms GUI is compiled at all. Worth doing on every push even
-      # though nothing is packaged here.
+      # The GUI does compile on Linux - EnableWindowsTargeting in its csproj restores
+      # the WindowsDesktop targeting pack from NuGet - so this job is not the only
+      # place it is checked. It is still worth building the whole solution on the
+      # platform it ships for, ahead of packaging.
       - name: Build solution (includes the WinForms GUI)
         run: dotnet build SteamClipRemuxer.sln --configuration Release --no-restore
 
@@ -98,7 +99,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Derive version
         id: version

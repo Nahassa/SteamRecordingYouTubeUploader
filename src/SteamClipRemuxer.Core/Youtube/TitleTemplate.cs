@@ -15,15 +15,30 @@ public static class TitleTemplate
     /// </summary>
     public const string DefaultClipTitle = "{game} - {highlight_full}";
 
+    /// <summary>
+    /// Default for a compilation. There is no one highlight to name, so the title says what the
+    /// video is; the individual plays are named in the timestamp list in the description.
+    /// </summary>
+    public const string DefaultCompilationTitle = "{game} - {count} clip compilation";
+
+    /// <summary>
+    /// Default for a reel cut down to one clip's fights. That clip has exactly one best
+    /// engagement - HighlightSelector picks the largest, ties broken by the earliest - so naming
+    /// it is honest, where "1 clip compilation" was not.
+    /// </summary>
+    public const string DefaultHighlightsTitle = "{game} - {highlight_full}";
+
     public static string Expand(
         string template,
         string filePath,
-        bool removeDateFromFilename = false,
+        TitleTimestamp titleTimestamp = TitleTimestamp.Keep,
         string removeTextPatterns = "",
         DateTime? now = null,
         Highlights.Highlight? highlight = null,
         DateTimeOffset? recordedAt = null,
-        string? game = null)
+        string? game = null,
+        int? count = null,
+        int? fights = null)
     {
         DateTime timestamp = now ?? DateTime.Now;
         string stem = Path.GetFileNameWithoutExtension(filePath);
@@ -53,6 +68,13 @@ public static class TitleTemplate
             .Replace("{game}", game ?? clip.Game)
             .Replace("{recording_date}", recordingDate)
             .Replace("{recording_time}", recordingTime)
+            // Only a compilation has a count; elsewhere it collapses away with its separators.
+            .Replace("{count}", count?.ToString(CultureInfo.InvariantCulture) ?? "")
+            // Fights kept, which is not the same as clips joined. Kept separate from {count} so
+            // a reel spanning three clips cannot claim to be seven clips.
+            .Replace("{fights}", fights?.ToString(CultureInfo.InvariantCulture) ?? "")
+            // Spelled the same as in a file name template, so one vocabulary covers both boxes.
+            .Replace("{clip_name}", stem)
             .Replace("{date}", timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             .Replace("{time}", timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture))
             .Replace("{datetime}", timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
@@ -60,7 +82,13 @@ public static class TitleTemplate
             .Replace("{month}", timestamp.Month.ToString("D2", CultureInfo.InvariantCulture))
             .Replace("{day}", timestamp.Day.ToString("D2", CultureInfo.InvariantCulture));
 
-        if (removeDateFromFilename) result = RemoveDates(result);
+        result = titleTimestamp switch
+        {
+            TitleTimestamp.None => RemoveDates(result),
+            TitleTimestamp.DateOnly => RemoveTimes(result),
+            _ => result,
+        };
+
         if (!string.IsNullOrWhiteSpace(removeTextPatterns)) result = RemovePatterns(result, removeTextPatterns);
 
         return result.Trim();
@@ -91,6 +119,23 @@ public static class TitleTemplate
 
         return Tidy(result);
     }
+
+    /// <summary>
+    /// Strips a time of day and leaves any date where it is.
+    ///
+    /// Deliberately not <see cref="RemoveDates"/> with a flag. That one matches the combined
+    /// "2026-10-20 19-22-36" form first and by design, so a date can never survive it; this runs
+    /// only the lone-time rule the combined one would otherwise have swallowed.
+    ///
+    /// The lookarounds keep a scoreline out of it: "13-9" has two groups rather than three, and a
+    /// digit on either side rules a match out, so "Ace 13-9 comeback" is untouched. A date is safe
+    /// for the same reason - the "26-10-20" inside "2026-10-20" is preceded by a digit.
+    ///
+    /// Steam's own compact "20261020_192236" carries no separators to recognise and is left whole.
+    /// There would be no date left to keep in it anyway, so it is a case for None, not this.
+    /// </summary>
+    public static string RemoveTimes(string input) =>
+        Tidy(Regex.Replace(input, @"(?<!\d)\d{2}[-:]\d{2}[-:]\d{2}(?!\d)", ""));
 
     public static string RemovePatterns(string input, string commaSeparatedPatterns)
     {

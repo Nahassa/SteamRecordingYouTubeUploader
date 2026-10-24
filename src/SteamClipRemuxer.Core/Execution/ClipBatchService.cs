@@ -14,11 +14,23 @@ public sealed record ClipListing
     public required ClipFolder Clip { get; init; }
     public required ClipState State { get; init; }
 
+    /// <summary>What has already been done with this clip, as the list's columns show it.</summary>
+    public ClipStatus Status { get; init; } = ClipStatus.New;
+
     /// <summary>What the clip shows, when the timeline could be read.</summary>
     public Highlight? Highlight { get; init; }
 
-    /// <summary>The name the output file would be given.</summary>
+    /// <summary>
+    /// The name the output file is given: the one the user set for this clip, or the generated
+    /// one when they have not set any.
+    /// </summary>
     public required string SuggestedName { get; init; }
+
+    /// <summary>The name the user set, or null when the generated one is in use.</summary>
+    public string? CustomName { get; init; }
+
+    /// <summary>Whether the name came from the user rather than the template.</summary>
+    public bool IsRenamed => CustomName is { Length: > 0 };
 
     /// <summary>
     /// The game's name. Resolved from the app id where the settings are in scope, so a name the
@@ -28,7 +40,17 @@ public sealed record ClipListing
 
     public DateTimeOffset RecordedAt => Clip.Manifest.SessionStart + Clip.Manifest.StartInSession;
 
-    /// <summary>What the list shows for this row.</summary>
+    /// <summary>
+    /// What the clip shows, without the timestamp or the state - the list has columns for both.
+    /// </summary>
+    public string Summary()
+    {
+        string what = Highlight?.Describe() ?? "Clip";
+        string where = Highlight?.Map is { Length: > 0 } map ? $" - {map}" : "";
+        return what + where;
+    }
+
+    /// <summary>The whole row as one line, for logs and anywhere without columns.</summary>
     public string Describe()
     {
         string what = Highlight?.Describe() ?? "Clip";
@@ -56,13 +78,66 @@ public sealed record ClipListing
 public sealed class ClipBatchService
 {
     private readonly ClipRemuxService _remux;
+    private readonly ClipStitchService _stitch;
+    private readonly ClipHighlightService _highlights;
     private readonly IPipelineLog _log;
 
-    public ClipBatchService(ClipRemuxService remux, IPipelineLog? log = null)
+    public ClipBatchService(
+        ClipRemuxService remux,
+        ClipStitchService stitch,
+        ClipHighlightService highlights,
+        IPipelineLog? log = null,
+        ClipUpscaleService? upscale = null)
     {
         _remux = remux;
+        _stitch = stitch;
+        _highlights = highlights;
         _log = log ?? NullPipelineLog.Instance;
+        _upscale = upscale;
     }
+
+    /// <summary>
+    /// Scales a finished file up before upload, when that is switched on. Optional: without one
+    /// the setting simply has no effect, which keeps every existing caller working and keeps the
+    /// lossless paths free of it.
+    /// </summary>
+    private readonly ClipUpscaleService? _upscale;
+
+    /// <summary>
+    /// Works out what to upload and what to keep.
+    ///
+    /// Anything other than a finished, verified scale returns the lossless file: a failed upscale
+    /// costs the upscale, never the upload. The reason is logged either way, because an upload
+    /// that silently ignores a setting is indistinguishable from a broken one.
+    /// </summary>
+    private async Task<UploadPayload> PrepareUploadAsync(
+        string losslessPath, AppSettings settings, string workspace, CancellationToken ct)
+    {
+        if (settings.YouTubeUpscale == Configuration.YouTubeUpscale.Off)
+            return UploadPayload.Lossless(losslessPath);
+
+        if (_upscale is null)
+        {
+            _log.Warning("  upscaling is switched on but no encoder is wired up; uploading the original.");
+            return UploadPayload.Lossless(losslessPath);
+        }
+
+        UpscaleResult scaled = await _upscale
+            .UpscaleAsync(losslessPath, workspace, settings, ct)
+            .ConfigureAwait(false);
+
+        if (scaled.OutputPath is null)
+        {
+            _log.Info($"  uploading the original rather than a scaled copy: {scaled.Skipped}.");
+            return UploadPayload.Lossless(losslessPath);
+        }
+
+        return UploadPayload.Scaled(losslessPath, scaled.OutputPath);
+    }
+
+    /// <summary>A private scratch folder for the scaled copy, never the output folder.</summary>
+    private static string UpscaleWorkspace() =>
+        Path.Combine(Path.GetTempPath(), "sclip-upscale-" + Guid.NewGuid().ToString("N"));
 
     /// <summary>
     /// Every clip worth showing, newest first. Clips left at the full recording buffer are
@@ -71,10 +146,14 @@ public sealed class ClipBatchService
     /// is visible rather than being an unexplained absence.
     /// </summary>
     public static IReadOnlyList<ClipListing> FindClips(
-        AppSettings settings, ProcessedClipLog? processed = null, IPipelineLog? log = null)
+        AppSettings settings,
+        ProcessedClipLog? processed = null,
+        ClipNames? names = null,
+        IPipelineLog? log = null)
     {
         log ??= NullPipelineLog.Instance;
         processed ??= new ProcessedClipLog();
+        names ??= new ClipNames();
 
         IReadOnlyList<ClipFolder> folders = ClipFolder.Discover(settings.InputFolder, log);
         if (folders.Count == 0) return Array.Empty<ClipListing>();
@@ -85,7 +164,7 @@ public sealed class ClipBatchService
 
         foreach (ClipFolder clip in folders)
         {
-            if (!clip.Manifest.IsCropped(buffer))
+            if (!settings.IncludeLongClips && !clip.Manifest.IsCropped(buffer))
             {
                 skipped++;
                 continue;
@@ -103,22 +182,38 @@ public sealed class ClipBatchService
                     + $"'{game}'. Set one in Settings under Game names.");
             }
 
+            string? custom = names.For(clip.Manifest.Id);
+
             listings.Add(new ClipListing
             {
                 Clip = clip,
                 State = processed.StateOf(clip.Manifest.Id),
+                Status = ClipStatus.For(processed.Find(clip.Manifest.Id)),
                 Highlight = highlight,
                 GameName = game,
-                SuggestedName = ClipNaming.Expand(
+                CustomName = custom,
+                SuggestedName = custom ?? ClipNaming.Expand(
                     settings.ClipFileNameTemplate, game, recordedAt, highlight),
             });
+        }
+
+        if (settings.IncludeLongClips)
+        {
+            int long_ = listings.Count(l => !l.Clip.Manifest.IsCropped(buffer));
+            if (long_ > 0)
+            {
+                log.Info(
+                    $"{long_} clip(s) at or above {settings.MaxClipSeconds}s are listed because "
+                    + "'Also list clips at or above the threshold' is on.");
+            }
         }
 
         if (skipped > 0)
         {
             log.Info(
-                $"{skipped} clip(s) left at the full {settings.MaxClipSeconds}s buffer were skipped; "
-                + "crop a clip in Steam to include it.");
+                $"{skipped} clip(s) were not shorter than {settings.MaxClipSeconds}s, so they were "
+                + "left out; crop a clip in Steam, or turn on 'Also list clips at or above the "
+                + "threshold' to keep them.");
         }
 
         return listings;
@@ -146,7 +241,7 @@ public sealed class ClipBatchService
         IReadOnlyList<ClipListing> clips,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient? youtube = null,
+        IYouTubeUploader? youtube = null,
         IProgress<BatchProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -192,7 +287,7 @@ public sealed class ClipBatchService
         AppSettings settings,
         RemuxOptions options,
         ProcessedClipLog processed,
-        YouTubeClient? youtube,
+        IYouTubeUploader? youtube,
         CancellationToken ct)
     {
         ClipManifest manifest = listing.Clip.Manifest;
@@ -207,9 +302,9 @@ public sealed class ClipBatchService
             _log.Success($"  {Path.GetFileName(remux.OutputPath)}"
                 + (remux.AspectOverridden ? " (stretched, video copied)" : " (video copied)"));
 
-            string title = TitleTemplate.Expand(
+            string title = listing.CustomName ?? TitleTemplate.Expand(
                 settings.YouTubeClipTitleTemplate, remux.OutputPath,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
+                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
                 highlight: listing.Highlight, recordedAt: listing.RecordedAt,
                 game: listing.GameName);
 
@@ -247,30 +342,69 @@ public sealed class ClipBatchService
         string title,
         AppSettings settings,
         ProcessedClipLog processed,
-        YouTubeClient youtube,
+        IYouTubeUploader youtube,
         CancellationToken ct)
     {
         string output = outcome.OutputPath!;
-        _log.Info("  uploading to YouTube...");
+        string workspace = UpscaleWorkspace();
 
-        var request = new UploadRequest
+        try
         {
-            FilePath = output,
-            Title = title,
-            Description = TitleTemplate.Expand(
-                settings.YouTubeDescriptionTemplate, output,
-                settings.YouTubeRemoveDateFromFilename, settings.YouTubeRemoveTextPatterns,
-                highlight: listing.Highlight, recordedAt: listing.RecordedAt,
-                game: listing.GameName),
-            Tags = settings.ParsedTags,
-            PrivacyStatus = settings.YouTubePrivacyStatus,
-            CategoryId = settings.YouTubeCategoryId,
-            MadeForKids = settings.YouTubeMadeForKids,
-            AgeRestricted = settings.YouTubeAgeRestricted,
-            // Keeps the moment without spending title characters on it.
-            RecordedAt = listing.RecordedAt,
-        };
+            UploadPayload payload = await PrepareUploadAsync(output, settings, workspace, ct)
+                .ConfigureAwait(false);
 
+            _log.Info("  uploading to YouTube...");
+
+            var request = new UploadRequest
+            {
+                // The scaled copy when there is one; the description still reads from the
+                // lossless file's name, which is the one that carries the clip's identity.
+                FilePath = payload.UploadPath,
+                Title = title,
+                Description = TitleTemplate.Expand(
+                    settings.YouTubeDescriptionTemplate, output,
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
+                    highlight: listing.Highlight, recordedAt: listing.RecordedAt,
+                    game: listing.GameName),
+                Tags = settings.ParsedTags,
+                PrivacyStatus = settings.YouTubePrivacyStatus,
+                CategoryId = settings.YouTubeCategoryId,
+                MadeForKids = settings.YouTubeMadeForKids,
+                AgeRestricted = settings.YouTubeAgeRestricted,
+                // Keeps the moment without spending title characters on it.
+                RecordedAt = listing.RecordedAt,
+            };
+
+            UploadResult result = await PostAsync(request, youtube, ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                // The clip is remuxed and kept; only the upload failed, and the log records it as
+                // remuxed so a later run can upload it without doing the work again.
+                _log.Error($"  upload failed: {result.Error}");
+                return outcome with { Error = result.Error };
+            }
+
+            _log.Success($"  {result.VideoUrl}");
+            processed.MarkUploaded(listing.Clip.Manifest.Id, result.VideoId);
+
+            // The lossless file is what gets filed away, never the scaled copy.
+            string moved = FileOrganizer.MoveToUploaded(
+                payload.ArchivePath, Path.GetDirectoryName(payload.ArchivePath)!);
+
+            return outcome with { Uploaded = true, VideoUrl = result.VideoUrl, OutputPath = moved };
+        }
+        finally
+        {
+            // However the upload went, the scaled copy goes. It is not an output.
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>Sends one upload, reporting its progress in quarters rather than every percent.</summary>
+    private async Task<UploadResult> PostAsync(
+        UploadRequest request, IYouTubeUploader youtube, CancellationToken ct)
+    {
         var reported = new HashSet<int>();
         var progress = new Progress<int>(p =>
         {
@@ -278,20 +412,517 @@ public sealed class ClipBatchService
             if (p >= 0 && reported.Add(step) && step > 0) _log.Info($"  upload {step}%");
         });
 
-        UploadResult result = await youtube.UploadAsync(request, progress, ct).ConfigureAwait(false);
+        return await youtube.UploadAsync(request, progress, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Joins the selected clips into a single compilation instead of producing one file each.
+    ///
+    /// Every clip that goes in is recorded as processed, and as uploaded once the compilation
+    /// reaches YouTube, so it greys out and is not swept into a second compilation later. The
+    /// cost of that choice is that uploading one of them on its own again means forgetting its
+    /// entry in the processed log first.
+    /// </summary>
+    public async Task<IReadOnlyList<ClipOutcome>> RunStitchAsync(
+        IReadOnlyList<ClipListing> clips,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        IYouTubeUploader? youtube = null,
+        IProgress<BatchProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var options = new RemuxOptions
+        {
+            TargetDisplayAspect = settings.ParsedTargetAspect,
+            FastStart = settings.FastStart,
+        };
+
+        bool uploading = settings.EnableYouTubeUpload && youtube is { IsAuthenticated: true };
+
+        // Oldest first: the list shows newest at the top, which is the wrong way round to watch.
+        List<ClipListing> ordered = clips
+            .Where(c => !settings.SkipAlreadyProcessed
+                || !processed.ShouldSkip(c.Clip.Manifest.Id, uploading))
+            .OrderBy(c => c.RecordedAt)
+            .ToList();
+
+        int alreadyDone = clips.Count - ordered.Count;
+        if (alreadyDone > 0)
+            _log.Info($"{alreadyDone} clip(s) already done were left out of the compilation.");
+
+        if (ordered.Count < 2)
+        {
+            const string message =
+                "A compilation needs at least two clips that have not already been processed.";
+            _log.Error(message);
+            return new[] { new ClipOutcome
+            {
+                InputPath = clips.FirstOrDefault()?.Clip.Path ?? string.Empty,
+                Error = message,
+            } };
+        }
+
+        string workspace = Path.Combine(
+            Path.GetTempPath(), "sclip-parts-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            (IReadOnlyList<StitchInput> inputs, Dictionary<string, ClipListing> byPath) =
+                await BuildPartsAsync(ordered, settings, options, workspace, progress, ct)
+                    .ConfigureAwait(false);
+
+            if (inputs.Count < 2)
+            {
+                const string message = "Fewer than two clips could be prepared, so nothing was joined.";
+                _log.Error(message);
+                return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = message } };
+            }
+
+            ClipListing first = byPath[inputs[0].Path];
+            ClipStitchResult stitched = await _stitch
+                .StitchAsync(
+                    inputs, settings.OutputFolder,
+                    kept => first.CustomName ?? ClipNaming.Expand(
+                        settings.CompilationFileNameTemplate,
+                        first.GameName, first.RecordedAt, highlight: null, count: kept),
+                    options, ct)
+                .ConfigureAwait(false);
+
+            List<ClipListing> included = stitched.Parts.Select(part => byPath[part.Path]).ToList();
+
+            _log.Success($"  {Path.GetFileName(stitched.OutputPath)}"
+                + $" ({included.Count} clips joined, video copied)");
+
+            return new[] { await PublishAsync(
+                stitched, included, settings.YouTubeCompilationTitleTemplate,
+                settings, processed, uploading ? youtube : null,
+                cutToHighlights: false, ct)
+                .ConfigureAwait(false) };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"  {ex.Message}");
+            return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = ex.Message } };
+        }
+        finally
+        {
+            progress?.Report(new BatchProgress(ordered.Count, ordered.Count, string.Empty));
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>
+    /// Remuxes each clip into a part of the compilation. One clip failing costs that clip, not
+    /// the whole compilation, so the rest are still joined.
+    /// </summary>
+    private async Task<(IReadOnlyList<StitchInput> Inputs, Dictionary<string, ClipListing> ByPath)>
+        BuildPartsAsync(
+            IReadOnlyList<ClipListing> ordered,
+            AppSettings settings,
+            RemuxOptions options,
+            string workspace,
+            IProgress<BatchProgress>? progress,
+            CancellationToken ct)
+    {
+        var inputs = new List<StitchInput>();
+        var byPath = new Dictionary<string, ClipListing>(StringComparer.Ordinal);
+
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            ClipListing listing = ordered[i];
+            progress?.Report(new BatchProgress(i, ordered.Count, listing.SuggestedName));
+            _log.Info($"[{i + 1}/{ordered.Count}] {listing.SuggestedName}");
+
+            try
+            {
+                ClipRemuxResult part = await _remux
+                    .RemuxAsync(listing.Clip, workspace, $"part{i:00}", options,
+                        settings.RespectSteamCrop, ct)
+                    .ConfigureAwait(false);
+
+                inputs.Add(new StitchInput(part.OutputPath, listing.Highlight?.Describe() ?? "Clip"));
+                byPath[part.OutputPath] = listing;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"  {ex.Message}; left out of the compilation.");
+            }
+        }
+
+        return (inputs, byPath);
+    }
+
+    /// <summary>
+    /// Records the compilation against every clip in it, and uploads it once. The description
+    /// carries a timestamp per clip, which YouTube turns into chapters when they are long
+    /// enough.
+    /// </summary>
+    private async Task<ClipOutcome> PublishAsync(
+        ClipStitchResult stitched,
+        IReadOnlyList<ClipListing> included,
+        string titleTemplate,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        IYouTubeUploader? youtube,
+        bool cutToHighlights,
+        CancellationToken ct)
+    {
+        ClipListing first = included[0];
+
+        // Which template this is depends on what was built: naming one highlight would be a lie
+        // about a compilation, and calling a single clip's reel a "1 clip compilation" was a lie
+        // the other way. A name the user set on the clip beats either.
+        //
+        // {highlight} is only offered for a reel of one clip, where HighlightSelector has already
+        // picked that clip's largest engagement. Across several clips there is no one fight to
+        // name, so it is left null and collapses away.
+        string title = first.CustomName ?? TitleTemplate.Expand(
+            titleTemplate, stitched.OutputPath,
+            settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
+            highlight: included.Count == 1 ? first.Highlight : null,
+            recordedAt: first.RecordedAt, game: first.GameName,
+            count: included.Count, fights: stitched.Parts.Count);
+
+        foreach (ClipListing listing in included)
+        {
+            processed.MarkRemuxed(
+                listing.Clip.Manifest.Id, listing.Clip.FolderName, title,
+                stitched.OutputPath, listing.RecordedAt, cutToHighlights);
+        }
+
+        processed.Save(onError: m => _log.Warning(m));
+
+        var outcome = new ClipOutcome
+        {
+            InputPath = first.Clip.Path,
+            OutputPath = stitched.OutputPath,
+            Remuxed = true,
+            AspectOverridden = stitched.AspectOverridden,
+            Elapsed = stitched.Elapsed,
+        };
+
+        if (youtube is null) return outcome;
+
+        if (!StitchChapters.QualifyAsYouTubeChapters(stitched.Parts))
+        {
+            _log.Info(
+                "  the clips are listed with timestamps, but they are too few or too short for "
+                + "YouTube to show them as chapters.");
+        }
+
+        string workspace = UpscaleWorkspace();
+
+        try
+        {
+            return await SendAsync(
+                    stitched, included, first, title, settings, processed, youtube, outcome,
+                    workspace, ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // However the upload went, the scaled copy goes. It is not an output.
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>
+    /// Uploads a finished compilation or reel and files the lossless original away.
+    ///
+    /// Split out from PublishAsync so the scratch folder has exactly one place to be cleaned up,
+    /// rather than a try/finally wrapped around the whole of a method that also writes the
+    /// processed log.
+    /// </summary>
+    private async Task<ClipOutcome> SendAsync(
+        ClipStitchResult stitched,
+        IReadOnlyList<ClipListing> included,
+        ClipListing first,
+        string title,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        IYouTubeUploader youtube,
+        ClipOutcome outcome,
+        string workspace,
+        CancellationToken ct)
+    {
+        UploadPayload payload = await PrepareUploadAsync(
+                stitched.OutputPath, settings, workspace, ct)
+            .ConfigureAwait(false);
+
+        _log.Info("  uploading to YouTube...");
+
+        var request = new UploadRequest
+        {
+            // The scaled copy when there is one. Chapters and description still come from the
+            // lossless file, whose timings the scale does not change.
+            FilePath = payload.UploadPath,
+            Title = title,
+            Description = WithChapters(
+                TitleTemplate.Expand(
+                    settings.YouTubeDescriptionTemplate, stitched.OutputPath,
+                    settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
+                    highlight: included.Count == 1 ? first.Highlight : null,
+                    recordedAt: first.RecordedAt, game: first.GameName,
+                    count: included.Count, fights: stitched.Parts.Count),
+                stitched.Parts),
+            Tags = settings.ParsedTags,
+            PrivacyStatus = settings.YouTubePrivacyStatus,
+            CategoryId = settings.YouTubeCategoryId,
+            MadeForKids = settings.YouTubeMadeForKids,
+            AgeRestricted = settings.YouTubeAgeRestricted,
+            // The earliest clip in it, which is when the compilation's footage begins.
+            RecordedAt = first.RecordedAt,
+        };
+
+        UploadResult result = await PostAsync(request, youtube, ct).ConfigureAwait(false);
 
         if (!result.Success)
         {
-            // The clip is remuxed and kept; only the upload failed, and the log records it as
-            // remuxed so a later run can upload it without doing the work again.
+            // The compilation exists and every clip in it is recorded as remuxed, so a later
+            // run uploads it rather than building it again.
             _log.Error($"  upload failed: {result.Error}");
             return outcome with { Error = result.Error };
         }
 
         _log.Success($"  {result.VideoUrl}");
-        processed.MarkUploaded(listing.Clip.Manifest.Id, result.VideoId);
 
-        string moved = FileOrganizer.MoveToUploaded(output, Path.GetDirectoryName(output)!);
+        foreach (ClipListing listing in included)
+            processed.MarkUploaded(listing.Clip.Manifest.Id, result.VideoId);
+
+        processed.Save(onError: m => _log.Warning(m));
+
+        // The lossless file is what gets filed away, never the scaled copy.
+        string moved = FileOrganizer.MoveToUploaded(
+            payload.ArchivePath, Path.GetDirectoryName(payload.ArchivePath)!);
+
         return outcome with { Uploaded = true, VideoUrl = result.VideoUrl, OutputPath = moved };
+    }
+
+    /// <summary>Appends the timestamp list to a description, without leaving a blank line when there is none.</summary>
+    public static string WithChapters(string description, IReadOnlyList<StitchPart> parts)
+    {
+        string chapters = StitchChapters.Describe(parts);
+        return string.IsNullOrWhiteSpace(description)
+            ? chapters
+            : description + Environment.NewLine + Environment.NewLine + chapters;
+    }
+
+    /// <summary>
+    /// Cuts each clip down to the fights in it and joins what is left.
+    ///
+    /// Only Steam's own clip folders can go through this: the kill times come from the clip's
+    /// timeline, and an exported file does not have one.
+    ///
+    /// With <paramref name="joinAcrossClips"/> the result is one reel covering every selected
+    /// clip; without it, one reel per clip. Either way the clips that contributed are recorded as
+    /// processed, the same bargain the compilation path makes.
+    /// </summary>
+    public async Task<IReadOnlyList<ClipOutcome>> RunHighlightsAsync(
+        IReadOnlyList<ClipListing> clips,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        HighlightWindowOptions windowOptions,
+        bool joinAcrossClips = false,
+        IYouTubeUploader? youtube = null,
+        IProgress<BatchProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var options = new RemuxOptions
+        {
+            TargetDisplayAspect = settings.ParsedTargetAspect,
+            FastStart = settings.FastStart,
+        };
+
+        bool uploading = settings.EnableYouTubeUpload && youtube is { IsAuthenticated: true };
+
+        List<ClipListing> ordered = clips
+            .Where(c => !settings.SkipAlreadyProcessed
+                || !processed.ShouldSkip(c.Clip.Manifest.Id, uploading))
+            .OrderBy(c => c.RecordedAt)
+            .ToList();
+
+        int alreadyDone = clips.Count - ordered.Count;
+        if (alreadyDone > 0) _log.Info($"{alreadyDone} clip(s) already done were left out.");
+
+        if (ordered.Count == 0)
+        {
+            const string message = "Every selected clip has already been processed.";
+            _log.Error(message);
+            return new[] { new ClipOutcome
+            {
+                InputPath = clips.FirstOrDefault()?.Clip.Path ?? string.Empty,
+                Error = message,
+            } };
+        }
+
+        string workspace = Path.Combine(
+            Path.GetTempPath(), "sclip-highlights-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var cuts = new List<(ClipListing Listing, IReadOnlyList<StitchInput> Parts)>();
+
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                ClipListing listing = ordered[i];
+                progress?.Report(new BatchProgress(i, ordered.Count, listing.SuggestedName));
+                _log.Info($"[{i + 1}/{ordered.Count}] {listing.SuggestedName}");
+
+                // Copied out of the loop variable: a closure captures the variable rather than
+                // its value, so reporting would otherwise name whichever clip the loop had
+                // reached by the time the report arrived.
+                int index = i;
+
+                var cutProgress = new Progress<(int Completed, int Total)>(c => progress?.Report(
+                    new BatchProgress(
+                        index, ordered.Count, listing.SuggestedName,
+                        c.Completed >= c.Total
+                            ? "joining the fights"
+                            : $"cutting fight {c.Completed + 1} of {c.Total}",
+                        c.Completed, c.Total)));
+
+                try
+                {
+                    ClipHighlightResult cut = await _highlights
+                        .CutAsync(listing.Clip, Path.Combine(workspace, $"clip{i:00}"),
+                            options, windowOptions, cutProgress, ct)
+                        .ConfigureAwait(false);
+
+                    if (cut.Parts.Count == 0)
+                    {
+                        // Not a failure: a clip with no qualifying fight simply has nothing to
+                        // show, and saying which rule dropped it beats an unexplained absence.
+                        _log.Warning($"  nothing kept - {cut.Nothing}.");
+                        continue;
+                    }
+
+                    cuts.Add((listing, cut.Parts));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _log.Error($"  {ex.Message}");
+                }
+            }
+
+            if (cuts.Count == 0)
+            {
+                const string message = "No clip held a fight worth keeping.";
+                _log.Error(message);
+                return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = message } };
+            }
+
+            if (joinAcrossClips)
+            {
+                ClipListing first = cuts[0].Listing;
+                return new[] { await AssembleReelAsync(
+                    cuts.SelectMany(c => c.Parts).ToList(),
+                    cuts.Select(c => c.Listing).ToList(),
+                    // A reel spanning several clips is a compilation of highlights, so it keeps
+                    // the compilation's name and title. {count} is clips, {fights} the pieces cut.
+                    kept => first.CustomName ?? ClipNaming.Expand(
+                        settings.CompilationFileNameTemplate,
+                        first.GameName, first.RecordedAt, highlight: null,
+                        count: cuts.Count, fights: kept),
+                    settings.YouTubeCompilationTitleTemplate,
+                    settings, processed, uploading ? youtube : null, options, ct)
+                    .ConfigureAwait(false) };
+            }
+
+            var outcomes = new List<ClipOutcome>();
+            foreach ((ClipListing listing, IReadOnlyList<StitchInput> parts) in cuts)
+            {
+                outcomes.Add(await AssembleReelAsync(
+                        parts, new[] { listing },
+                        kept => listing.CustomName ?? ClipNaming.Expand(
+                            settings.HighlightsFileNameTemplate,
+                            listing.GameName, listing.RecordedAt, listing.Highlight,
+                            count: 1, clipName: listing.SuggestedName, fights: kept),
+                        settings.YouTubeHighlightsTitleTemplate,
+                        settings, processed, uploading ? youtube : null, options, ct)
+                    .ConfigureAwait(false));
+            }
+
+            return outcomes;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"  {ex.Message}");
+            return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = ex.Message } };
+        }
+        finally
+        {
+            progress?.Report(new BatchProgress(ordered.Count, ordered.Count, string.Empty));
+            TryDeleteDirectory(workspace);
+        }
+    }
+
+    /// <summary>
+    /// Turns the cut pieces into one finished file. One piece is adopted as it stands; more than
+    /// one goes through the join, which verifies the result byte for byte.
+    /// </summary>
+    private async Task<ClipOutcome> AssembleReelAsync(
+        IReadOnlyList<StitchInput> parts,
+        IReadOnlyList<ClipListing> included,
+        Func<int, string> name,
+        string titleTemplate,
+        AppSettings settings,
+        ProcessedClipLog processed,
+        IYouTubeUploader? youtube,
+        RemuxOptions options,
+        CancellationToken ct)
+    {
+        try
+        {
+            ClipStitchResult reel = parts.Count == 1
+                ? await _stitch.AdoptAsync(parts[0], settings.OutputFolder, name, options, ct)
+                    .ConfigureAwait(false)
+                : await _stitch.StitchAsync(parts, settings.OutputFolder, name, options, ct)
+                    .ConfigureAwait(false);
+
+            TimeSpan kept = reel.Parts[^1].StartsAt + reel.Parts[^1].Duration;
+            _log.Success(
+                $"  {Path.GetFileName(reel.OutputPath)} ({reel.Parts.Count} fight(s), "
+                + $"{kept.TotalSeconds:0.#}s kept, video copied)");
+
+            return await PublishAsync(
+                    reel, included, titleTemplate, settings, processed, youtube,
+                    cutToHighlights: true, ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"  {ex.Message}");
+            return new ClipOutcome { InputPath = included[0].Clip.Path, Error = ex.Message };
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 }

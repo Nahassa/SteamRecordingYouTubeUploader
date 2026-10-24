@@ -61,16 +61,51 @@ public sealed record ClipFolder
     {
         log ??= NullPipelineLog.Instance;
 
+        // Every reason a clip is skipped is already said out loud, one clip at a time. Finding
+        // nothing at all used to be the one silent outcome - an empty list and no explanation,
+        // which is the hardest kind of failure to report and the easiest to blame on the build.
+        if (string.IsNullOrWhiteSpace(inputFolder))
+        {
+            log.Warning(
+                "No recording folder is set, so there is nowhere to look for clips. Set it to the "
+                + "folder Steam records into (Steam > Settings > Game Recording).");
+            return Array.Empty<ClipFolder>();
+        }
+
+        if (!Directory.Exists(inputFolder))
+        {
+            log.Warning($"The recording folder '{inputFolder}' does not exist.");
+            return Array.Empty<ClipFolder>();
+        }
+
         string? root = ResolveClipsRoot(inputFolder);
-        if (root is null) return Array.Empty<ClipFolder>();
+        if (root is null)
+        {
+            log.Warning(
+                $"No clip folders under '{inputFolder}'. Steam keeps them in a '{ClipsFolderName}' "
+                + "subfolder of its recording folder, each one named 'clip_<app id>_<timestamp>'. "
+                + "Point the recording folder at either of those two levels.");
+            return Array.Empty<ClipFolder>();
+        }
+
+        log.Info($"Reading clips from {root}");
 
         var found = new List<ClipFolder>();
+        int seen = 0;
 
         foreach (string directory in Directory.EnumerateDirectories(root, "clip_*")
                      .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
         {
+            seen++;
             ClipFolder? clip = TryRead(directory, log);
             if (clip is not null) found.Add(clip);
+        }
+
+        if (found.Count < seen)
+        {
+            log.Warning(
+                $"{seen - found.Count} of {seen} clip folder(s) could not be read; see above for "
+                + "which and why.");
         }
 
         // Newest first: the clip just saved is the one most likely to be wanted.

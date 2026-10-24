@@ -1,3 +1,4 @@
+using SteamClipRemuxer.Core.Configuration;
 using SteamClipRemuxer.Core.Highlights;
 using Xunit;
 
@@ -97,5 +98,98 @@ public class ClipNamingTests
     public void Never_returns_an_empty_name()
     {
         Assert.Equal("Clip", ClipNaming.Expand("{weapon}", "", Recorded, new Highlight { KillCount = 0 }));
+    }
+
+    [Theory]
+    [InlineData('<')]
+    [InlineData('>')]
+    [InlineData(':')]
+    [InlineData('"')]
+    [InlineData('/')]
+    [InlineData('\\')]
+    [InlineData('|')]
+    [InlineData('?')]
+    [InlineData('*')]
+    public void Every_character_windows_forbids_is_taken_out(char forbidden)
+    {
+        // Spelled out rather than asked of the running machine: Path.GetInvalidFileNameChars is
+        // NUL and '/' on Linux, so a colon would pass the tests and then fail to write on the
+        // Windows machine the app runs on.
+        Assert.DoesNotContain(forbidden, ClipNaming.Sanitise($"Ace{forbidden}on Mirage"));
+    }
+
+    [Fact]
+    public void A_control_character_is_taken_out_too() =>
+        Assert.DoesNotContain('\t', ClipNaming.Sanitise("Ace\ton Mirage"));
+
+    [Fact]
+    public void A_name_that_sanitises_away_to_nothing_still_has_one() =>
+        Assert.Equal("Clip", ClipNaming.Sanitise("///"));
+
+    // The templates below became settings. These pin the defaults to what the code produced
+    // when they were constants, so an install nobody has touched keeps naming files the same.
+
+    [Fact]
+    public void The_compilation_default_is_unchanged_by_becoming_a_setting()
+    {
+        string name = ClipNaming.Expand(
+            new AppSettings().CompilationFileNameTemplate,
+            "Counter-Strike 2", Recorded, highlight: null, count: 4);
+
+        Assert.Equal("Counter-Strike 2 - Compilation - 2026-08-28 21-52-42 (4 clips)", name);
+    }
+
+    [Fact]
+    public void A_highlights_reel_is_named_after_the_clip_it_came_from()
+    {
+        // Was hardcoded as SuggestedName + " - Highlights"; {clip_name} keeps that exactly, and
+        // keeps it following the clip file name template rather than restating it.
+        string name = ClipNaming.Expand(
+            new AppSettings().HighlightsFileNameTemplate,
+            "Counter-Strike 2", Recorded, new Highlight { KillCount = 3 },
+            clipName: "Counter-Strike 2 - 2026-08-28 21-52-42 - Triple kill");
+
+        Assert.Equal("Counter-Strike 2 - 2026-08-28 21-52-42 - Triple kill - Highlights", name);
+    }
+
+    [Fact]
+    public void Clips_joined_and_fights_kept_are_counted_separately()
+    {
+        // Three clips can hold seven fights. One placeholder for both would have to lie about
+        // one of them.
+        string name = ClipNaming.Expand(
+            "{count} clips, {fights} fights", "Counter-Strike 2", Recorded,
+            highlight: null, count: 3, fights: 7);
+
+        Assert.Equal("3 clips, 7 fights", name);
+    }
+
+    [Fact]
+    public void A_placeholder_with_nothing_to_put_in_it_leaves_no_gap()
+    {
+        // A compilation spans several clips and so has no one map or round. The separators have
+        // to close up, or every such name carries a " - - " in the middle.
+        string name = ClipNaming.Expand(
+            "{game} - {map} - {round} - Compilation", "Counter-Strike 2", Recorded,
+            highlight: null);
+
+        Assert.Equal("Counter-Strike 2 - Compilation", name);
+    }
+
+    [Fact]
+    public void No_default_template_leans_on_a_placeholder_a_compilation_cannot_fill()
+    {
+        var settings = new AppSettings();
+
+        foreach (string template in new[]
+                 {
+                     settings.CompilationFileNameTemplate,
+                     settings.YouTubeCompilationTitleTemplate,
+                 })
+        {
+            Assert.DoesNotContain("{map}", template);
+            Assert.DoesNotContain("{round}", template);
+            Assert.DoesNotContain("{highlight}", template);
+        }
     }
 }

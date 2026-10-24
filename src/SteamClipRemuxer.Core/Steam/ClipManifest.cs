@@ -35,12 +35,6 @@ public sealed record ClipManifest
     public int AppId { get; init; }
 
     /// <summary>
-    /// The game's built-in name, or a readable fallback. Callers with settings in scope should
-    /// use SteamApps.NameFor with the user's own list instead, so a name they have set wins.
-    /// </summary>
-    public string GameName => SteamApps.NameFor(AppId);
-
-    /// <summary>
     /// How far the video session starts after the timeline session. Observed between 19.6s and
     /// 35.3s across samples, so it is never safe to assume: session.mpd's Period@start is measured
     /// from the video session, and only adding this reaches the timeline's coordinates.

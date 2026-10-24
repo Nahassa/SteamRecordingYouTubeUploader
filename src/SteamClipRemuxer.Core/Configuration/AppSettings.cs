@@ -24,13 +24,31 @@ public sealed class AppSettings
     public ClipSource ClipSource { get; set; } = ClipSource.ExportedFiles;
 
     /// <summary>
-    /// Longest clip to process, in seconds. Steam writes an untouched clip at exactly the
-    /// recording buffer length, so anything shorter is one the user actually cropped. The
-    /// buffer is a Steam setting rather than a fixed value, hence configurable here; the
-    /// comparison is strict, so leaving this at the buffer length excludes untouched clips
-    /// without needing a tolerance.
+    /// Clips shorter than this many seconds are included; a clip of exactly this length is not.
+    /// Steam writes an untouched clip at exactly the recording buffer length, so anything
+    /// shorter is one the user actually cropped. The buffer is a Steam setting rather than a
+    /// fixed value, hence configurable here; the comparison is strict, so leaving this at the
+    /// buffer length excludes untouched clips without needing a tolerance.
     /// </summary>
     public int MaxClipSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// Also list clips at or above <see cref="MaxClipSeconds"/>, instead of only those below it.
+    ///
+    /// Off, the threshold behaves as it always has. On, the clips left at the full recording
+    /// buffer come back into the list - which is what the kill-highlights cut is for, since an
+    /// untouched clip is mostly the footage that cut throws away.
+    /// </summary>
+    public bool IncludeLongClips { get; set; }
+
+    /// <summary>
+    /// Footage kept before the first kill of a fight, in seconds, when cutting a clip down to its
+    /// kills. Snaps outward to Steam's three-second chunks, which is the finest a copy can cut.
+    /// </summary>
+    public int HighlightLeadSeconds { get; set; } = 3;
+
+    /// <summary>Footage kept after the last kill of a fight, in seconds. Snaps outward as well.</summary>
+    public int HighlightTailSeconds { get; set; } = 3;
 
     /// <summary>
     /// Cut the output down to the range cropped in Steam. Steam's crop point usually falls
@@ -63,11 +81,55 @@ public sealed class AppSettings
     public string YouTubeClipTitleTemplate { get; set; } = Youtube.TitleTemplate.DefaultClipTitle;
 
     /// <summary>
+    /// Name for a compilation file. Its {count} counts the clips joined, and it carries no
+    /// {map}, {round} or {highlight}: a video spanning several clips has no single one of those,
+    /// and a default should not lean on the sanitiser to sweep up the gap.
+    /// </summary>
+    public string CompilationFileNameTemplate { get; set; } =
+        Highlights.ClipNaming.DefaultCompilationTemplate;
+
+    /// <summary>YouTube title for a compilation. Used for a highlights reel joined across clips too.</summary>
+    public string YouTubeCompilationTitleTemplate { get; set; } =
+        Youtube.TitleTemplate.DefaultCompilationTitle;
+
+    /// <summary>
+    /// Name for a reel cut down to one clip's fights. {clip_name} is that clip's own file name,
+    /// so the default tracks the clip file name template rather than restating it.
+    /// </summary>
+    public string HighlightsFileNameTemplate { get; set; } =
+        Highlights.ClipNaming.DefaultHighlightsTemplate;
+
+    /// <summary>
+    /// YouTube title for a reel cut down to one clip's fights. Before this existed every reel
+    /// went out titled "1 clip compilation", which is the compilation title counting a single
+    /// clip.
+    /// </summary>
+    public string YouTubeHighlightsTitleTemplate { get; set; } =
+        Youtube.TitleTemplate.DefaultHighlightsTitle;
+
+    /// <summary>
     /// Game names by Steam app id, e.g. "730" -> "Counter-Strike 2". A clip folder identifies its
     /// game only by id, so without an entry an unrecognised game is named "App 440". Only
     /// Counter-Strike 2 is built in, and anything set here wins over that.
     /// </summary>
     public Dictionary<string, string> GameNames { get; set; } = new();
+
+    /// <summary>
+    /// Where the window was last, and how the clip list and preview were divided. All zero means
+    /// nothing has been saved yet, so the built-in layout is used.
+    ///
+    /// The position is only honoured when it still lands on an attached screen: a window restored
+    /// onto a monitor that has since been unplugged is a window that cannot be got back.
+    /// </summary>
+    public int WindowWidth { get; set; }
+
+    public int WindowHeight { get; set; }
+    public int WindowLeft { get; set; }
+    public int WindowTop { get; set; }
+    public bool WindowMaximized { get; set; }
+
+    /// <summary>Where the splitter between the clip list and the preview sat.</summary>
+    public int SplitterDistance { get; set; }
 
     public bool EnableYouTubeUpload { get; set; }
     public string YouTubeTitleTemplate { get; set; } = "{game} - {clip}";
@@ -77,8 +139,44 @@ public sealed class AppSettings
     public string YouTubeCategoryId { get; set; } = "20";
     public bool YouTubeMadeForKids { get; set; }
     public bool YouTubeAgeRestricted { get; set; }
+    /// <summary>
+    /// The old form of <see cref="YouTubeTitleTimestamp"/>, kept only so a settings file written
+    /// before the change still loads. Translated once on load and then cleared; nothing reads it.
+    /// </summary>
     public bool YouTubeRemoveDateFromFilename { get; set; }
+
+    /// <summary>
+    /// What happens to a timestamp a title inherited from the file it was built from. See
+    /// <see cref="Youtube.TitleTimestamp"/>.
+    ///
+    /// Worth having separately from the templates because a file name has to carry the time - it
+    /// is what stops two clips from one evening colliding - while a title does not, and a title
+    /// built from {filename} or {clip} cannot drop it by editing the template.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public Youtube.TitleTimestamp YouTubeTitleTimestamp { get; set; } = Youtube.TitleTimestamp.Keep;
+
     public string YouTubeRemoveTextPatterns { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Scale the video up before uploading, to clear a YouTube ladder rung this footage falls just
+    /// short of. See <see cref="Configuration.YouTubeUpscale"/> for the measurements.
+    ///
+    /// Off by default, and off is the only setting that uploads the untouched stream. The file kept
+    /// on disk is the lossless one either way: the scaled copy is a temporary, uploaded and deleted.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public YouTubeUpscale YouTubeUpscale { get; set; } = YouTubeUpscale.Off;
+
+    /// <summary>
+    /// Use the GPU's encoder for that scaling when it can actually do it.
+    ///
+    /// Only honoured after a real trial encode of the exact option set succeeds; a machine without
+    /// the hardware, or an FFmpeg without the flags, falls back to software and says so in the log.
+    /// Worth very little in quality - the whole encoder field measured 0.19 dB apart - so this is a
+    /// speed setting wearing a quality setting's clothes.
+    /// </summary>
+    public bool UseHardwareEncoder { get; set; }
 
     [JsonIgnore]
     public AspectRatio ParsedTargetAspect =>
@@ -87,6 +185,24 @@ public sealed class AppSettings
     [JsonIgnore]
     public string[] ParsedTags =>
         YouTubeTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>
+    /// Brings a settings file written before a setting changed shape up to date.
+    ///
+    /// The timestamp handling used to be a bool. Changing that property's type outright would have
+    /// made every existing file fail to parse, and <see cref="Load"/> answers a parse failure with
+    /// defaults - so one changed field would have quietly reset every other setting the user had
+    /// ever chosen. The old property stays, is translated once, and is cleared.
+    ///
+    /// Idempotent: a file that is loaded but never saved translates to the same value next time.
+    /// </summary>
+    private void CarryLegacySettingsForward()
+    {
+        if (YouTubeRemoveDateFromFilename && YouTubeTitleTimestamp == Youtube.TitleTimestamp.Keep)
+            YouTubeTitleTimestamp = Youtube.TitleTimestamp.None;
+
+        YouTubeRemoveDateFromFilename = false;
+    }
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
@@ -97,7 +213,12 @@ public sealed class AppSettings
         try
         {
             if (!File.Exists(path)) return new AppSettings();
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+
+            AppSettings settings =
+                JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+
+            settings.CarryLegacySettingsForward();
+            return settings;
         }
         catch (Exception ex)
         {
