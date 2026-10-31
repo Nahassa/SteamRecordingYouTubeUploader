@@ -87,6 +87,23 @@ retention, which is the way to try a branch without releasing it.
 
 ## Things the container cannot do
 
-No Windows, no NVIDIA GPU, no VMAF in the FFmpeg build. So: the GUI is never seen, the NVENC
-path is never exercised, and quality is measured with SSIM and PSNR. State these plainly when
-reporting work rather than letting "tests pass" imply more than it does.
+No Windows, no NVIDIA GPU, no VMAF in the FFmpeg build. So the GUI is never seen here, the
+NVENC path cannot run here, and quality is measured with SSIM and PSNR rather than VMAF. State
+these plainly when reporting work rather than letting "tests pass" imply more than it does.
+
+What has been confirmed on real hardware, on an RTX 5080, is worth not re-litigating. Both
+upscale paths produce a correct 1080p file from 1280x960 source:
+
+| | SSIM | time | footage |
+| --- | --- | --- | --- |
+| `libx265` | 0.9832 | 121s | 75s reel |
+| `hevc_nvenc` | 0.9851 | 35s | 63s reel |
+
+NVENC passed the capability probe with the full option set, including `-b_ref_mode middle` and
+`-tune hq`, and tagged `pc` correctly rather than the `tv` it is notorious for — so the colour
+range guard did not fire. zscale accepted `yuvj420p` directly, so the swscale fallback is still
+untested. The archived file was verified on disk afterwards as `1280x960 yuvj420p pc`: the
+upload is a temporary, the recording is untouched.
+
+Different clips, so do not read those two SSIM figures against each other. What is real is that
+NVENC is roughly three times faster at equivalent quality.

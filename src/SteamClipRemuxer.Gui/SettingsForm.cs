@@ -163,11 +163,16 @@ public sealed class SettingsForm : Form
                 + "{filename_ext} {date} {time} {datetime} {year} {month} {day}"),
             Header("Trimming titles"),
             Row("Timestamp in titles:", _titleTimestamp),
-            Note("Only touches the YouTube title, never the file name - a file name keeps its "
-                + "time because that is what stops two clips from one evening sharing a name. "
-                + "'Date only' turns 'CS2 - 2026-10-20 19-22-36 - Dust2 multikills' into "
-                + "'CS2 - 2026-10-20 - Dust2 multikills'. Use this rather than the box below when "
-                + "the time differs in every title, which it does."),
+            Note("Applies to the YouTube title and the description, never to the file name - a "
+                + "file name keeps its time because that is what stops two clips from one evening "
+                + "sharing a name. 'Date only' turns 'CS2 - 2026-10-20 19-22-36 - Dust2 "
+                + "multikills' into 'CS2 - 2026-10-20 - Dust2 multikills'. Use this rather than "
+                + "the box below when the time differs in every title, which it does."),
+            Note("Because it reaches the description too, 'Remove date and time' turns a "
+                + "description of 'Recorded {recording_date}' into the bare word 'Recorded'. "
+                + "Choose 'Date only', or drop {recording_date} from the description, if that "
+                + "reads oddly. Renaming a clip in the list sets its title outright and is not "
+                + "trimmed by this at all."),
             Row("Also remove text:", _removePatterns),
             Note($"Credentials and sign-in tokens live in {AppPaths.DataDirectory}")));
 
