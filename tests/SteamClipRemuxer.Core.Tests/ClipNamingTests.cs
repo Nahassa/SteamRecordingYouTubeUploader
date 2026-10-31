@@ -140,16 +140,16 @@ public class ClipNamingTests
     }
 
     [Fact]
-    public void A_highlights_reel_is_named_after_the_clip_it_came_from()
+    public void A_highlights_reel_is_named_for_its_match_and_keeps_the_time()
     {
-        // Was hardcoded as SuggestedName + " - Highlights"; {clip_name} keeps that exactly, and
-        // keeps it following the clip file name template rather than restating it.
+        // Named for the map rather than its best fight: a reel of a whole match holds every
+        // fight in it. The time stays because an output with the same name is overwritten.
         string name = ClipNaming.Expand(
             new AppSettings().HighlightsFileNameTemplate,
-            "Counter-Strike 2", Recorded, new Highlight { KillCount = 3 },
-            clipName: "Counter-Strike 2 - 2026-08-28 21-52-42 - Triple kill");
+            "CS2", Recorded, new Highlight { KillCount = 4, Map = "Inferno" },
+            clipName: "CS2 - 2026-08-28 21-52-42 - Quad kill");
 
-        Assert.Equal("Counter-Strike 2 - 2026-08-28 21-52-42 - Triple kill - Highlights", name);
+        Assert.Equal("CS2 - 2026-08-28 21-52-42 - Inferno - Highlights", name);
     }
 
     [Fact]

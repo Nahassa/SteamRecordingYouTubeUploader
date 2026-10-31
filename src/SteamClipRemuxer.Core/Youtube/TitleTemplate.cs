@@ -22,11 +22,16 @@ public static class TitleTemplate
     public const string DefaultCompilationTitle = "{game} - {count} clip compilation";
 
     /// <summary>
-    /// Default for a reel cut down to one clip's fights. That clip has exactly one best
-    /// engagement - HighlightSelector picks the largest, ties broken by the earliest - so naming
-    /// it is honest, where "1 clip compilation" was not.
+    /// Default for a reel cut down to one clip's fights: "CS2 - 2026-09-19 - Inferno highlights".
+    ///
+    /// The match, not its best fight. This used to be {highlight_full}, which names the single
+    /// largest engagement - accurate, but a reel of a whole map holds every fight in it, so the
+    /// title described one moment of the video and was renamed by hand on every upload.
     /// </summary>
-    public const string DefaultHighlightsTitle = "{game} - {highlight_full}";
+    public const string DefaultHighlightsTitle = "{game} - {recording_date} - {map} highlights";
+
+    /// <summary>The previous default, kept so a saved copy of it can be moved forward.</summary>
+    public const string LegacyHighlightsTitle = "{game} - {highlight_full}";
 
     public static string Expand(
         string template,

@@ -61,11 +61,13 @@ public static class HighlightSelector
             e.Icon.Equals("cs2_bomb_defused", StringComparison.OrdinalIgnoreCase) &&
             e.Description.StartsWith("You ", StringComparison.OrdinalIgnoreCase));
 
-        string? map = timeline.MapAt(start);
-        string? mode = timeline.ModeAt(start);
+        string? map = timeline.MapDuring(start, end);
+        string? mode = timeline.ModeDuring(start, end);
         int? round = timeline.RoundAt(start);
 
-        IReadOnlyList<Engagement> fights = Cluster(candidates, timeline);
+        // Warmup never names a clip: a whole-map clip would otherwise be titled for whatever
+        // was shot before the match began whenever that happened to be the biggest fight.
+        IReadOnlyList<Engagement> fights = Cluster(candidates, timeline, includeWarmup: false);
 
         if (fights.Count == 0)
         {
@@ -107,9 +109,13 @@ public static class HighlightSelector
     /// all of them. Both go through the same clustering, so the reel can never disagree with the
     /// title about what happened.
     /// </summary>
+    /// <param name="includeWarmup">
+    /// Keep kills made outside a match. Off unless asked for: on a clip of a whole map, the
+    /// warmup kill is the first fight in it, which opened every reel on warmup footage.
+    /// </param>
     public static IReadOnlyList<Engagement> Engagements(
-        SessionTimeline timeline, TimeSpan start, TimeSpan end) =>
-        Cluster(Candidates(timeline, start, end), timeline);
+        SessionTimeline timeline, TimeSpan start, TimeSpan end, bool includeWarmup = false) =>
+        Cluster(Candidates(timeline, start, end), timeline, includeWarmup);
 
     /// <summary>
     /// When the player died, oldest first.
@@ -143,9 +149,13 @@ public static class HighlightSelector
 
     /// <summary>Groups kills into fights, splitting wherever a gap exceeds the engagement window.</summary>
     private static IReadOnlyList<Engagement> Cluster(
-        IReadOnlyList<TimelineEntry> candidates, SessionTimeline timeline)
+        IReadOnlyList<TimelineEntry> candidates, SessionTimeline timeline, bool includeWarmup)
     {
-        List<Kill> kills = candidates.SelectMany(ToKills).OrderBy(k => k.Time).ToList();
+        List<Kill> kills = candidates
+            .SelectMany(ToKills)
+            .Where(k => includeWarmup || timeline.InMatch(k.Time))
+            .OrderBy(k => k.Time)
+            .ToList();
         if (kills.Count == 0) return Array.Empty<Engagement>();
 
         var fights = new List<Engagement>();

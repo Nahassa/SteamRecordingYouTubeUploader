@@ -35,6 +35,31 @@ public sealed class SettingsForm : Form
         Width = 80, Minimum = 0, Maximum = 60, Increment = 3,
     };
 
+    private readonly NumericUpDown _minKills = new()
+    {
+        Width = 80, Minimum = 1, Maximum = 5,
+    };
+
+    private readonly NumericUpDown _intro = new()
+    {
+        Width = 80, Minimum = 0, Maximum = 120, Increment = 3,
+    };
+
+    private readonly NumericUpDown _outro = new()
+    {
+        Width = 80, Minimum = 0, Maximum = 120, Increment = 3,
+    };
+
+    private readonly CheckBox _includeWarmup = new()
+    {
+        Text = "Include kills from warmup", AutoSize = true,
+    };
+
+    private readonly ComboBox _launchSelection = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList, Width = 200,
+    };
+
     private readonly CheckBox _respectCrop = new()
     {
         Text = "Cut to the range cropped in Steam", AutoSize = true,
@@ -98,6 +123,7 @@ public sealed class SettingsForm : Form
         _privacy.Items.AddRange(new object[] { "private", "unlisted", "public" });
         _upscale.Items.AddRange(new object[] { OffLabel, "1080p", "1440p" });
         _titleTimestamp.Items.AddRange(new object[] { KeepLabel, DateOnlyLabel, NoneLabel });
+        _launchSelection.Items.AddRange(new object[] { SinceLastSessionLabel, TodayLabel, NothingLabel });
 
         var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
 
@@ -122,11 +148,26 @@ public sealed class SettingsForm : Form
                 + "earlier keyframe. Either way the video is copied, never re-encoded; unticking "
                 + "keeps whole segments and a little more footage than you cropped."),
             _skipProcessed,
-            Header("Kill highlights"),
+            Row("Tick on launch:", _launchSelection),
+            Note("Which unprocessed clips start out ticked. 'Since last session' means recorded "
+                + "after the app was last closed. A clip already remuxed or uploaded is never "
+                + "ticked for you.")));
+
+        tabs.TabPages.Add(Page("Highlights",
             Row("Keep before each kill (s):", _highlightLead),
             Row("Keep after each kill (s):", _highlightTail),
             Note("Both snap outward to Steam's three-second chunks: Steam writes one keyframe per "
-                + "chunk, so three seconds is the finest a lossless cut can manage.")));
+                + "chunk, so three seconds is the finest a lossless cut can manage."),
+            Row("Default min kills/round:", _minKills),
+            Row("Default intro (s):", _intro),
+            Row("Default outro (s):", _outro),
+            Note("What the main window's boxes start at; each can still be changed for one run. "
+                + "The intro is taken from the very start of the clip and the outro from the very "
+                + "end - on a whole-map clip, the final scoreboard. 0 turns either off. Neither "
+                + "repeats footage a fight already shows."),
+            _includeWarmup,
+            Note("Kills made before the match begins. Off by default: on a clip of a whole map "
+                + "they come first, so the reel opened on warmup footage.")));
 
         tabs.TabPages.Add(Page("Naming",
             Row("Clip file name:", _clipFileName),
@@ -296,6 +337,24 @@ public sealed class SettingsForm : Form
 
     private const string OffLabel = "Off (upload as recorded)";
 
+    private const string SinceLastSessionLabel = "Recorded since last session";
+    private const string TodayLabel = "Recorded today";
+    private const string NothingLabel = "Nothing";
+
+    private static string LabelFor(LaunchSelection selection) => selection switch
+    {
+        LaunchSelection.RecordedToday => TodayLabel,
+        LaunchSelection.None => NothingLabel,
+        _ => SinceLastSessionLabel,
+    };
+
+    private static LaunchSelection SelectionFor(string? label) => label switch
+    {
+        TodayLabel => LaunchSelection.RecordedToday,
+        NothingLabel => LaunchSelection.None,
+        _ => LaunchSelection.SinceLastSession,
+    };
+
     private const string KeepLabel = "Keep as the template builds it";
     private const string DateOnlyLabel = "Date only (drop the time)";
     private const string NoneLabel = "Remove date and time";
@@ -350,6 +409,15 @@ public sealed class SettingsForm : Form
             _settings.HighlightLeadSeconds, (int)_highlightLead.Minimum, (int)_highlightLead.Maximum);
         _highlightTail.Value = Math.Clamp(
             _settings.HighlightTailSeconds, (int)_highlightTail.Minimum, (int)_highlightTail.Maximum);
+        _minKills.Value = Math.Clamp(
+            _settings.HighlightMinKillsPerRound, (int)_minKills.Minimum, (int)_minKills.Maximum);
+        _intro.Value = Math.Clamp(
+            _settings.HighlightIntroSeconds, (int)_intro.Minimum, (int)_intro.Maximum);
+        _outro.Value = Math.Clamp(
+            _settings.HighlightOutroSeconds, (int)_outro.Minimum, (int)_outro.Maximum);
+        _includeWarmup.Checked = _settings.HighlightIncludeWarmup;
+        _launchSelection.SelectedItem = LabelFor(_settings.LaunchSelection);
+        if (_launchSelection.SelectedIndex < 0) _launchSelection.SelectedIndex = 0;
         _respectCrop.Checked = _settings.RespectSteamCrop;
         _skipProcessed.Checked = _settings.SkipAlreadyProcessed;
         _clipFileName.Text = _settings.ClipFileNameTemplate;
@@ -389,6 +457,11 @@ public sealed class SettingsForm : Form
         _settings.IncludeLongClips = _includeLong.Checked;
         _settings.HighlightLeadSeconds = (int)_highlightLead.Value;
         _settings.HighlightTailSeconds = (int)_highlightTail.Value;
+        _settings.HighlightMinKillsPerRound = (int)_minKills.Value;
+        _settings.HighlightIntroSeconds = (int)_intro.Value;
+        _settings.HighlightOutroSeconds = (int)_outro.Value;
+        _settings.HighlightIncludeWarmup = _includeWarmup.Checked;
+        _settings.LaunchSelection = SelectionFor(_launchSelection.SelectedItem?.ToString());
         _settings.RespectSteamCrop = _respectCrop.Checked;
         _settings.SkipAlreadyProcessed = _skipProcessed.Checked;
         // A blank box means "give me the default back", not "name every file Clip".

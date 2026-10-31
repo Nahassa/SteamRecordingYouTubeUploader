@@ -149,12 +149,41 @@ public sealed class MainForm : Form
         Text = "Min kills/round:", AutoSize = true, Height = 30, Padding = new Padding(8, 7, 0, 0),
     };
 
+    /// <summary>Seconds from the start of the clip kept ahead of the first fight; 0 is none.</summary>
+    private readonly NumericUpDown _intro = new()
+    {
+        Width = 52, Minimum = 0, Maximum = 120, Increment = 3,
+    };
+
+    private readonly Label _introLabel = new()
+    {
+        Text = "Intro (s):", AutoSize = true, Height = 30, Padding = new Padding(8, 7, 0, 0),
+    };
+
+    /// <summary>Seconds from the end of the clip kept after the last fight; 0 is none.</summary>
+    private readonly NumericUpDown _outro = new()
+    {
+        Width = 52, Minimum = 0, Maximum = 120, Increment = 3,
+    };
+
+    private readonly Label _outroLabel = new()
+    {
+        Text = "Outro (s):", AutoSize = true, Height = 30, Padding = new Padding(8, 7, 0, 0),
+    };
+
+    /// <summary>
+    /// When the app was closed last time, read once at startup. The setting itself is
+    /// overwritten on close, so a reload later in this session must not measure from that.
+    /// </summary>
+    private readonly DateTimeOffset? _previousSessionEnd;
+
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Black };
     private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 68, Padding = new Padding(6) };
 
     private readonly Button _remux = new() { Text = "Remux Selected", Width = 140, Height = 30 };
     private readonly Button _cancel = new() { Text = "Cancel", Width = 90, Height = 30, Enabled = false };
-    private readonly Button _selectAll = new() { Text = "Select All", Width = 100, Height = 30 };
+    private readonly Button _selectAll = new() { Text = "Select All", Width = 90, Height = 30 };
+    private readonly Button _invert = new() { Text = "Invert", Width = 70, Height = 30 };
     /// <summary>
     /// How far through the clip being worked on, not through the batch. A clip can be minutes of
     /// work, so a bar that only moved between clips looked stopped for most of a run.
@@ -175,6 +204,7 @@ public sealed class MainForm : Form
     {
         AppPaths.EnsureCreated();
         _settings = AppSettings.Load(onError: m => BeginInvoke(() => Log(LogLevel.Warning, m)));
+        _previousSessionEnd = _settings.LastSessionEndedAt;
 
         _probe = new MediaProbe(_runner);
         _thumbnails = new ThumbnailExtractor(_runner);
@@ -225,7 +255,7 @@ public sealed class MainForm : Form
     private void BuildLayout()
     {
         Text = "Steam Clip Remuxer";
-        // Wide enough for the widest bottom row (850px); see the budget where those rows are built.
+        // Wide enough for the widest bottom row (854px); see the budget where those rows are built.
         MinimumSize = new Size(900, 520);
         RestoreGeometry();
 
@@ -305,6 +335,7 @@ public sealed class MainForm : Form
         {
             if (_populating) return;
             if (e.Item.Tag is ClipEntry entry) entry.Checked = e.Item.Checked;
+            UpdateSelectAllText();
         };
 
         foreach (CheckBox filter in new[]
@@ -366,6 +397,8 @@ public sealed class MainForm : Form
         _highlights.CheckedChanged += (_, _) => UpdateModeControls();
         _cancel.Click += (_, _) => _cancellation?.Cancel();
         _selectAll.Click += (_, _) => ToggleAll();
+        _invert.Click += (_, _) => InvertSelection();
+        _tips.SetToolTip(_invert, "Tick the clips on show that are unticked, and untick the rest.");
 
         var reload = new Button { Text = "Reload", Width = 90, Height = 30 };
         reload.Click += (_, _) => LoadClips();
@@ -397,22 +430,45 @@ public sealed class MainForm : Form
         var showLog = new Button { Text = "Show Log", Width = 100, Height = 30 };
         showLog.Click += (_, _) => ShowLog();
 
+        // The options that only mean something while cutting highlights, on a row of their own.
+        // They outgrew the modes row when the intro and outro joined them.
+        var cutting = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(8, 0, 8, 4),
+            FlowDirection = FlowDirection.LeftToRight,
+        };
+
+        _tips.SetToolTip(_intro,
+            "Seconds from the very start of the clip kept ahead of the first fight. 0 for none.");
+        _tips.SetToolTip(_outro,
+            "Seconds from the very end of the clip - the final scoreboard - kept after the last "
+            + "fight. 0 for none.");
+
         // Width budget, so the next control added here is spending something visible. Explicit
         // widths plus the default 3px margin a side, plus the panel's own padding:
-        //   actions  140+90+100+90+100+110+100  -> 788px
-        //   modes     52+190+142+130+132+100+46 -> 850px
-        // Both inside the 900px minimum window width set in BuildLayout. Exceed it and the row
+        //   actions  140+90+90+70+90+100+110+100 -> 854px
+        //   modes     52+190+142+130             -> 554px
+        //   cutting  132+100+46+70+52+74+52      -> 584px (labels AutoSize; estimated, not measured)
+        // All inside the 900px minimum window width set in BuildLayout. Exceed it and the row
         // wraps to a second line and the panel grows - visible, but no longer one clean row.
         actions.Controls.AddRange(new Control[]
         {
-            _remux, _cancel, _selectAll, reload, settings, timelines, showLog,
+            _remux, _cancel, _selectAll, _invert, reload, settings, timelines, showLog,
         });
 
         modes.Controls.AddRange(new Control[]
         {
             new Label { Text = "Source:", Width = 52, Height = 30, TextAlign = ContentAlignment.MiddleRight },
             _source,
-            _stitch, _highlights, _skipDeaths, _minKillsLabel, _minKills,
+            _stitch, _highlights,
+        });
+
+        cutting.Controls.AddRange(new Control[]
+        {
+            _skipDeaths, _minKillsLabel, _minKills, _introLabel, _intro, _outroLabel, _outro,
         });
 
         // --- status ----------------------------------------------------------
@@ -448,6 +504,7 @@ public sealed class MainForm : Form
         // Bottom docking is resolved from the highest index downward, so the row added later
         // lands lower: modes first puts the toggles above the buttons they modify.
         Controls.Add(modes);
+        Controls.Add(cutting);
         Controls.Add(actions);
         Controls.Add(statusBar);
         Controls.Add(folders);
@@ -475,6 +532,11 @@ public sealed class MainForm : Form
         FormClosing += (_, _) =>
         {
             SaveGeometry();
+            RememberRunChoices();
+
+            // Read back at the next launch by "since last session". Taken at close rather than
+            // at open, as asked: a clip recorded while the app sat open is then treated as seen.
+            _settings.LastSessionEndedAt = DateTimeOffset.Now;
             Persist();
         };
     }
@@ -486,8 +548,40 @@ public sealed class MainForm : Form
         _inputFolder.Text = _settings.InputFolder;
         _outputFolder.Text = _settings.OutputFolder;
         SelectSource(_settings.ClipSource);
+
+        _highlights.Checked = _settings.KillHighlightsOnly;
+        _skipDeaths.Checked = _settings.StopBeforeDeaths;
+        ApplyCuttingDefaults();
+
         UpdateModeControls();
         if (Directory.Exists(_inputFolder.Text)) LoadClips();
+    }
+
+    /// <summary>
+    /// Puts the numeric per-run boxes back to the defaults chosen in Settings. Numbers are
+    /// defaults rather than remembered, so a one-off change does not become the next launch's.
+    /// </summary>
+    private void ApplyCuttingDefaults()
+    {
+        _minKills.Value = Clamp(_minKills, _settings.HighlightMinKillsPerRound);
+        _intro.Value = Clamp(_intro, _settings.HighlightIntroSeconds);
+        _outro.Value = Clamp(_outro, _settings.HighlightOutroSeconds);
+    }
+
+    private static decimal Clamp(NumericUpDown box, int value) =>
+        Math.Clamp(value, box.Minimum, box.Maximum);
+
+    /// <summary>
+    /// The two highlight toggles are remembered between sessions. Only while Steam clips are the
+    /// source: exported files force "Kill highlights only" off, and saving that forced value
+    /// would lose the choice the next time Steam clips are picked.
+    /// </summary>
+    private void RememberRunChoices()
+    {
+        if (_settings.ClipSource != ClipSource.SteamClips) return;
+
+        _settings.KillHighlightsOnly = _highlights.Checked;
+        _settings.StopBeforeDeaths = _skipDeaths.Checked;
     }
 
     private void Persist()
@@ -577,7 +671,19 @@ public sealed class MainForm : Form
     private void LoadExportedFiles()
     {
         IReadOnlyList<string> files = BatchService.FindRecordings(_inputFolder.Text);
-        foreach (string file in files) _all.Add(new ClipEntry { Path = file, Checked = true });
+        DateTimeOffset now = DateTimeOffset.Now;
+
+        // An exported file carries no recording moment of its own, so its write time stands in.
+        foreach (string file in files)
+        {
+            _all.Add(new ClipEntry
+            {
+                Path = file,
+                Checked = LaunchSelectionRule.ShouldTick(
+                    _settings.LaunchSelection, unprocessed: true,
+                    new DateTimeOffset(File.GetLastWriteTime(file)), now, _previousSessionEnd),
+            });
+        }
 
         SetStatus($"{files.Count} clip(s) found.");
     }
@@ -599,15 +705,19 @@ public sealed class MainForm : Form
 
         IReadOnlyList<ClipListing> clips = ClipBatchService.FindClips(_settings, _processed, _names, log);
 
+        DateTimeOffset now = DateTimeOffset.Now;
+
         foreach (ClipListing clip in clips)
         {
-            // Already handled clips are listed but not ticked, so pressing the button does not
-            // silently redo them while they stay visible.
+            // Already handled clips are listed but never ticked, so pressing the button does not
+            // silently redo them while they stay visible. Of the rest, the setting decides.
             _all.Add(new ClipEntry
             {
                 Path = clip.Clip.Path,
                 Listing = clip,
-                Checked = clip.State == ClipState.New,
+                Checked = LaunchSelectionRule.ShouldTick(
+                    _settings.LaunchSelection, clip.State == ClipState.New,
+                    clip.RecordedAt, now, _previousSessionEnd),
             });
         }
 
@@ -655,6 +765,7 @@ public sealed class MainForm : Form
 
         if (_clips.Items.Count > 0) _clips.Items[0].Selected = true;
         UpdateFilterStatus();
+        UpdateSelectAllText();
     }
 
     private ListViewItem RowFor(ClipEntry entry)
@@ -760,7 +871,37 @@ public sealed class MainForm : Form
             if (row.Tag is ClipEntry entry) entry.Checked = !allChecked;
         }
 
-        _selectAll.Text = allChecked ? "Select All" : "Deselect All";
+        UpdateSelectAllText();
+    }
+
+    /// <summary>Flips every row on show, leaving anything a filter is hiding alone.</summary>
+    private void InvertSelection()
+    {
+        _populating = true;
+        try
+        {
+            foreach (ListViewItem row in _clips.Items)
+            {
+                row.Checked = !row.Checked;
+                if (row.Tag is ClipEntry entry) entry.Checked = row.Checked;
+            }
+        }
+        finally
+        {
+            _populating = false;
+        }
+
+        UpdateSelectAllText();
+    }
+
+    /// <summary>
+    /// Says what the button will do from the rows as they are now. It used to change only when
+    /// pressed, so after ticking rows by hand it could offer "Deselect All" with nothing ticked.
+    /// </summary>
+    private void UpdateSelectAllText()
+    {
+        bool allChecked = _clips.Items.Count > 0 && _clips.CheckedItems.Count == _clips.Items.Count;
+        _selectAll.Text = allChecked ? "Deselect All" : "Select All";
     }
 
     // ---------------------------------------------------------------- preview
@@ -1016,6 +1157,9 @@ public sealed class MainForm : Form
         Tail = TimeSpan.FromSeconds(Math.Max(0, _settings.HighlightTailSeconds)),
         MinimumKillsPerRound = (int)_minKills.Value,
         StopBeforeDeaths = _skipDeaths.Checked,
+        Intro = TimeSpan.FromSeconds((double)_intro.Value),
+        Outro = TimeSpan.FromSeconds((double)_outro.Value),
+        IncludeWarmup = _settings.HighlightIncludeWarmup,
     };
 
     /// <summary>
@@ -1034,6 +1178,10 @@ public sealed class MainForm : Form
         _skipDeaths.Enabled = cutting;
         _minKills.Enabled = cutting;
         _minKillsLabel.Enabled = cutting;
+        _intro.Enabled = cutting;
+        _introLabel.Enabled = cutting;
+        _outro.Enabled = cutting;
+        _outroLabel.Enabled = cutting;
 
         _remux.Text = (cutting, _stitch.Checked) switch
         {
@@ -1052,10 +1200,13 @@ public sealed class MainForm : Form
     {
         _remux.Enabled = !busy;
         _selectAll.Enabled = !busy;
+        _invert.Enabled = !busy;
         _stitch.Enabled = !busy;
         _highlights.Enabled = !busy && _settings.ClipSource == ClipSource.SteamClips;
         _skipDeaths.Enabled = !busy && _highlights.Checked;
         _minKills.Enabled = !busy && _highlights.Checked;
+        _intro.Enabled = !busy && _highlights.Checked;
+        _outro.Enabled = !busy && _highlights.Checked;
         _filters.Enabled = !busy;
         _cancel.Enabled = busy;
         UseWaitCursor = busy;
@@ -1065,10 +1216,23 @@ public sealed class MainForm : Form
 
     private void OpenSettings()
     {
+        (int MinKills, int Intro, int Outro) defaults = (
+            _settings.HighlightMinKillsPerRound,
+            _settings.HighlightIntroSeconds,
+            _settings.HighlightOutroSeconds);
+
         using var dialog = new SettingsForm(_settings);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
         _settings.Save(onError: m => Log(LogLevel.Warning, m));
+
+        // A default changed in Settings is taken up at once. Only when it changed, so pressing OK
+        // for something else does not throw away a value typed into the box for this run.
+        if (defaults != (_settings.HighlightMinKillsPerRound,
+                _settings.HighlightIntroSeconds, _settings.HighlightOutroSeconds))
+        {
+            ApplyCuttingDefaults();
+        }
 
         // Rebuild the list rather than only refreshing the preview. Each row caches the game
         // name, the file name it would be given and the decision that it is short enough to

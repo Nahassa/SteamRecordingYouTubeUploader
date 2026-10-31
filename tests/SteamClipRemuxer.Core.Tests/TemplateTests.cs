@@ -247,14 +247,16 @@ public class ReelTitleTests
         new(2026, 8, 28, 21, 52, 42, TimeSpan.Zero);
 
     [Fact]
-    public void A_highlights_reel_is_titled_for_its_fight_not_as_a_one_clip_compilation()
+    public void A_highlights_reel_is_titled_for_its_match_not_its_best_fight()
     {
+        // The title asked for: game, date and map, with no time and no single fight named.
         string title = TitleTemplate.Expand(
             new AppSettings().YouTubeHighlightsTitleTemplate, File,
-            highlight: new Highlight { KillCount = 3, Weapon = "AK-47" },
-            recordedAt: Recorded, game: "Counter-Strike 2", count: 1, fights: 1);
+            highlight: new Highlight { KillCount = 4, Weapon = "AK-47", Map = "Inferno" },
+            recordedAt: new DateTimeOffset(2026, 9, 19, 21, 3, 11, TimeSpan.Zero),
+            game: "CS2", count: 1, fights: 6);
 
-        Assert.Equal("Counter-Strike 2 - Triple kill with the AK-47", title);
+        Assert.Equal("CS2 - 2026-09-19 - Inferno highlights", title);
         Assert.DoesNotContain("compilation", title, StringComparison.OrdinalIgnoreCase);
     }
 

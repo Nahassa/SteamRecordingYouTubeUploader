@@ -137,7 +137,8 @@ public sealed class ClipHighlightService
         var spanStart = TimeSpan.FromSeconds(chunkStarts[0] + offset);
         var spanEnd = TimeSpan.FromSeconds(streamEnd + offset);
 
-        IReadOnlyList<Engagement> fights = HighlightSelector.Engagements(timeline, spanStart, spanEnd);
+        IReadOnlyList<Engagement> fights = HighlightSelector.Engagements(
+            timeline, spanStart, spanEnd, windowOptions.IncludeWarmup);
         if (fights.Count == 0) return Empty("the timeline records no kills in this clip");
 
         IReadOnlyList<ChunkRun> runs = ChunkWindows.Plan(
@@ -244,7 +245,7 @@ public sealed class ClipHighlightService
             ? round
             : run.Label;
 
-        return new StitchInput(partPath, label, run.ChapterGroup);
+        return new StitchInput(partPath, label, run.ChapterGroup, IsFight: run.Kind == RunKind.Fight);
     }
 
     private async Task<IReadOnlyList<double>> ReadKeyframesAsync(string filePath, CancellationToken ct)
