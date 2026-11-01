@@ -24,6 +24,29 @@ public sealed record HighlightWindowOptions
 
     /// <summary>End a run before the player's own death rather than carrying past it.</summary>
     public bool StopBeforeDeaths { get; init; }
+
+    /// <summary>
+    /// Footage from the very start of the clip, kept ahead of the first fight. Zero is none.
+    /// Snaps outward to a chunk boundary, and never reaches into the first fight's own chunks.
+    /// </summary>
+    public TimeSpan Intro { get; init; } = TimeSpan.Zero;
+
+    /// <summary>
+    /// Footage from the very end of the clip - the final scoreboard on a whole-map clip - kept
+    /// after the last fight. Zero is none. Snaps outward, and never repeats the last fight.
+    /// </summary>
+    public TimeSpan Outro { get; init; } = TimeSpan.Zero;
+
+    /// <summary>Keep kills made in warmup, outside the match. See HighlightSelector.Engagements.</summary>
+    public bool IncludeWarmup { get; init; }
+}
+
+/// <summary>What a run of chunks is there for.</summary>
+public enum RunKind
+{
+    Fight,
+    Intro,
+    Outro,
 }
 
 /// <summary>A contiguous span of Steam's chunks to keep, numbered as Steam numbers them.</summary>
@@ -37,7 +60,9 @@ public sealed record ChunkRun
 
     public int? Round { get; init; }
 
-    /// <summary>The fights this run covers, oldest first.</summary>
+    public RunKind Kind { get; init; } = RunKind.Fight;
+
+    /// <summary>The fights this run covers, oldest first. Empty for an intro or outro.</summary>
     public required IReadOnlyList<Engagement> Engagements { get; init; }
 
     public int ChunkCount => LastIndex - FirstIndex + 1;
@@ -57,6 +82,9 @@ public sealed record ChunkRun
     {
         get
         {
+            if (Kind == RunKind.Intro) return "Intro";
+            if (Kind == RunKind.Outro) return "Outro";
+
             Engagement best = Engagements
                 .OrderByDescending(e => e.KillCount)
                 .ThenBy(e => e.FirstKill)
@@ -156,8 +184,19 @@ public static class ChunkWindows
 
         var runs = new List<ChunkRun>();
 
+        // The footage's own span, in the timeline's clock.
+        double footageStart = chunkStarts[0] + videoSessionOffsetSeconds;
+        double footageEnd = streamEnd + videoSessionOffsetSeconds;
+
         foreach (Engagement fight in KeepQualifyingRounds(engagements, options.MinimumKillsPerRound))
         {
+            // A fight wholly outside the footage has nothing to show. The kills are searched a
+            // little beyond the clip so a fight straddling its start is not split, but ChunkAt
+            // clamps, so a fight that ended before the footage began used to land on chunk 1
+            // and put the clip's opening seconds into the reel.
+            if (fight.LastKill.TotalSeconds < footageStart || fight.FirstKill.TotalSeconds > footageEnd)
+                continue;
+
             (TimeSpan from, TimeSpan to) = Window(fight, roundStarts, deaths, options);
 
             int first = ChunkAt(chunkStarts, from.TotalSeconds - videoSessionOffsetSeconds);
@@ -175,7 +214,76 @@ public static class ChunkWindows
             });
         }
 
-        return Merge(runs);
+        IReadOnlyList<ChunkRun> fights = Merge(runs);
+
+        // An intro and outro frame the fights; with no fights there is no reel to frame.
+        if (fights.Count == 0) return fights;
+
+        return Frame(chunkStarts, streamEnd, fights, options);
+    }
+
+    /// <summary>
+    /// Adds the intro and outro around the fights, each trimmed so it stops where the nearest
+    /// fight begins. Overlapping would show those chunks twice, because an intro carries no round
+    /// and so is never merged into a fight's run.
+    /// </summary>
+    private static IReadOnlyList<ChunkRun> Frame(
+        IReadOnlyList<double> chunkStarts,
+        double streamEnd,
+        IReadOnlyList<ChunkRun> fights,
+        HighlightWindowOptions options)
+    {
+        var framed = new List<ChunkRun>(fights.Count + 2);
+
+        if (options.Intro > TimeSpan.Zero)
+        {
+            // The chunk holding the intro's last instant, so a 4-second intro keeps two chunks.
+            double until = chunkStarts[0] + options.Intro.TotalSeconds;
+            int last = Math.Min(ChunkBefore(chunkStarts, until), fights[0].FirstIndex - 1);
+
+            if (last >= 1)
+            {
+                framed.Add(new ChunkRun
+                {
+                    FirstIndex = 1, LastIndex = last, Kind = RunKind.Intro,
+                    Engagements = Array.Empty<Engagement>(),
+                });
+            }
+        }
+
+        framed.AddRange(fights);
+
+        if (options.Outro > TimeSpan.Zero)
+        {
+            int first = Math.Max(
+                ChunkAt(chunkStarts, streamEnd - options.Outro.TotalSeconds),
+                fights[^1].LastIndex + 1);
+
+            if (first <= chunkStarts.Count)
+            {
+                framed.Add(new ChunkRun
+                {
+                    FirstIndex = first, LastIndex = chunkStarts.Count, Kind = RunKind.Outro,
+                    Engagements = Array.Empty<Engagement>(),
+                });
+            }
+        }
+
+        return framed;
+    }
+
+    /// <summary>
+    /// The 1-based chunk holding the last moment before <paramref name="until"/>: the chunk an
+    /// interval ending there finishes in. A chunk starting exactly at the end is not reached.
+    /// </summary>
+    private static int ChunkBefore(IReadOnlyList<double> chunkStarts, double until)
+    {
+        for (int i = chunkStarts.Count - 1; i >= 0; i--)
+        {
+            if (chunkStarts[i] < until) return i + 1;
+        }
+
+        return 1;
     }
 
     /// <summary>

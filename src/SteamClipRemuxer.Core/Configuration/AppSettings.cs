@@ -51,6 +51,46 @@ public sealed class AppSettings
     public int HighlightTailSeconds { get; set; } = 3;
 
     /// <summary>
+    /// What "Min kills/round" starts at on the main window. A default rather than a remembered
+    /// value: the box can be changed for one run without changing what the next launch offers.
+    /// </summary>
+    public int HighlightMinKillsPerRound { get; set; } = 1;
+
+    /// <summary>
+    /// Seconds from the start of the clip kept as an intro, ahead of the first fight. 0 is off.
+    /// The default for the main window's Intro box.
+    /// </summary>
+    public int HighlightIntroSeconds { get; set; }
+
+    /// <summary>
+    /// Seconds from the end of the clip kept as an outro, after the last fight. 0 is off. The
+    /// default for the main window's Outro box.
+    /// </summary>
+    public int HighlightOutroSeconds { get; set; }
+
+    /// <summary>
+    /// Keeps kills from warmup, before the match has begun. Off by default: on a clip of a whole
+    /// map they are the first thing in it, and they made every reel open on warmup footage.
+    /// </summary>
+    public bool HighlightIncludeWarmup { get; set; }
+
+    /// <summary>"Kill highlights only" on the main window, remembered between sessions.</summary>
+    public bool KillHighlightsOnly { get; set; }
+
+    /// <summary>"Stop before deaths" on the main window, remembered between sessions.</summary>
+    public bool StopBeforeDeaths { get; set; }
+
+    /// <summary>Which clips start out ticked when the list is read.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public LaunchSelection LaunchSelection { get; set; } = LaunchSelection.SinceLastSession;
+
+    /// <summary>
+    /// When the app was last closed, so "since last session" knows where the last one ended.
+    /// Null until the app has been closed once.
+    /// </summary>
+    public DateTimeOffset? LastSessionEndedAt { get; set; }
+
+    /// <summary>
     /// Cut the output down to the range cropped in Steam. Steam's crop point usually falls
     /// mid-GOP, so the cut lands on the nearest earlier keyframe: still a verbatim packet copy,
     /// never a re-encode, but up to a segment shorter than an exact frame cut would be.
@@ -202,6 +242,15 @@ public sealed class AppSettings
             YouTubeTitleTimestamp = Youtube.TitleTimestamp.None;
 
         YouTubeRemoveDateFromFilename = false;
+
+        // A template still at the old default was never chosen; it is simply what shipped. Moving
+        // it to the new default is what makes the change reach anyone at all, while a template
+        // that was edited is left exactly as it was.
+        if (HighlightsFileNameTemplate == Highlights.ClipNaming.LegacyHighlightsTemplate)
+            HighlightsFileNameTemplate = Highlights.ClipNaming.DefaultHighlightsTemplate;
+
+        if (YouTubeHighlightsTitleTemplate == Youtube.TitleTemplate.LegacyHighlightsTitle)
+            YouTubeHighlightsTitleTemplate = Youtube.TitleTemplate.DefaultHighlightsTitle;
     }
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };

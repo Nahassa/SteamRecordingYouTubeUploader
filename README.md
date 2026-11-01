@@ -82,6 +82,19 @@ changing what will be processed. The preview shows each clip at its *display* as
 the stretched result before committing. For a Steam clip it uses the thumbnail Steam already
 wrote, so it is instant.
 
+Which clips start out ticked is set under Settings → Clips → **Tick on launch**:
+
+| | |
+|---|---|
+| **Recorded since last session** (default) | unprocessed clips recorded after the app was last closed |
+| **Recorded today** | unprocessed clips from today's local date |
+| **Nothing** | every clip is ticked by hand |
+
+A clip already remuxed or uploaded is never ticked for you. This replaced ticking every unprocessed
+clip, which stopped working once some clips were never meant to be processed: they stayed
+unprocessed and were ticked again on every launch. **Invert**, next to **Select All**, flips the
+ticks on the rows on show.
+
 The list has a column per status, ticked when it holds, and a filter for each above it:
 
 | | |
@@ -139,10 +152,20 @@ Tick **Kill highlights only** and a clip is cut down to the fights in it, droppi
 between them. Steam clips only — the kill times come out of the clip's timeline, and an exported
 file does not have one, so the box is disabled for that source.
 
-Alongside it: **Stop before deaths** ends a run before you get killed rather than carrying past it,
-and **Min kills/round** keeps only rounds where that many of your kills are inside the clip. Both
-are per run. How much footage to keep either side of a kill lives in Settings, at 3 seconds each by
-default.
+Below it: **Stop before deaths** ends a run before you get killed rather than carrying past it,
+and **Min kills/round** keeps only rounds where that many of your kills are inside the clip.
+**Intro** keeps that many seconds from the very start of the clip ahead of the first fight, and
+**Outro** keeps that many from the very end after the last one, which is the final scoreboard on a
+whole-map clip. 0 turns either off, and neither repeats chunks a fight already shows. The two
+checkboxes are remembered between sessions. The three numbers start at the defaults set under
+Settings → Highlights, so a change made for one run does not carry over. How much footage to keep
+either side of a kill also lives there, at 3 seconds each by default.
+
+Kills made in warmup, before Steam opens the match's phase, are left out unless **Include kills
+from warmup** is ticked in Settings. On a clip of a whole map the warmup kill is the first fight,
+so every reel used to open on a few seconds of warmup. That looked like an intro, but it was never
+meant to be one. A fight that ended before the clip's footage begins is also dropped now, rather
+than being clamped onto the first chunk.
 
 **Three seconds is the finest cut, and that is not a setting.** Steam writes its recording as
 3-second DASH chunks with one keyframe at the start of each — measured at 4125.010, 4128.010 and
@@ -173,16 +196,27 @@ hides — so Settings has **Also list clips at or above the threshold** to bring
 
 ### Naming
 
-Settings carries six naming boxes under **Steam clips** — a file name and a YouTube title each for a
-single clip, a compilation, and a highlights reel. All six default to what the code used to hardcode,
-so an install nobody has touched names everything exactly as before.
+Settings carries six naming boxes under **Naming** — a file name and a YouTube title each for a
+single clip, a compilation, and a highlights reel.
+
+A highlights reel is named for its match, because the usual source is a clip of a whole map:
+
+| | Default |
+|---|---|
+| title | `{game} - {recording_date} - {map} highlights` → *CS2 - 2026-09-19 - Inferno highlights* |
+| file | `{game} - {recording_date} {recording_time} - {map} - Highlights` |
+
+The file name keeps the time because an output with the same name is overwritten. These replaced
+`{game} - {highlight_full}` and `{clip_name} - Highlights`, which named the reel's single best fight
+("Quad kill") and had to be renamed by hand on every upload. A settings file still holding either
+old default is moved to the new one on load. A template you edited is left alone.
 
 | Placeholder | Means |
 | --- | --- |
 | `{game}` | the game, honouring the app-id overrides below |
 | `{recording_date}` `{recording_time}` | when the clip was recorded, not when the batch ran |
 | `{highlight}` `{highlight_full}` `{weapon}` `{kills}` | the clip's largest fight, ties broken by the earliest |
-| `{map}` `{mode}` `{round}` | where and when, from the timeline |
+| `{map}` `{mode}` `{round}` | where and when, from the timeline; a clip that starts in warmup takes the map of the match that follows |
 | `{count}` | clips joined |
 | `{fights}` | fights kept — a reel from three clips can hold seven |
 | `{clip_name}` | the clip's own file name, so a reel follows the clip file name box |

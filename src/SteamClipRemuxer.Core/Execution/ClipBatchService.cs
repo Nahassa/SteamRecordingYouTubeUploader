@@ -901,7 +901,7 @@ public sealed class ClipBatchService
 
             TimeSpan kept = reel.Parts[^1].StartsAt + reel.Parts[^1].Duration;
             _log.Success(
-                $"  {Path.GetFileName(reel.OutputPath)} ({reel.Parts.Count} fight(s), "
+                $"  {Path.GetFileName(reel.OutputPath)} ({parts.Count(p => p.IsFight)} fight(s), "
                 + $"{kept.TotalSeconds:0.#}s kept, video copied)");
 
             return await PublishAsync(

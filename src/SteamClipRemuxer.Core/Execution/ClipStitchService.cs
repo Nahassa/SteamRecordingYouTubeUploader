@@ -13,7 +13,11 @@ namespace SteamClipRemuxer.Core.Execution;
 /// enough apart that they are cut as separate pieces, and listing both is double-counting: the
 /// round is one thing that happened. Null - the compilation case - means one chapter per part.
 /// </summary>
-public sealed record StitchInput(string Path, string Label, string? Group = null);
+/// <param name="IsFight">
+/// False for an intro or outro: it is part of the video but not a fight, so it is left out of
+/// the {fights} count a name or title reports.
+/// </param>
+public sealed record StitchInput(string Path, string Label, string? Group = null, bool IsFight = true);
 
 /// <summary>Where a part ended up inside the finished compilation.</summary>
 public sealed record StitchPart
@@ -280,7 +284,7 @@ public sealed class ClipStitchService
 
             // Named only once the incompatible parts are out, so a compilation of four never
             // calls itself a compilation of five.
-            string name = outputFileName(kept.Count);
+            string name = outputFileName(kept.Count(k => k.Input.IsFight));
             string outputPath = Path.Combine(outputDirectory, name + ".mp4");
 
             // Exported files can be joined in place, so the output folder may be the input

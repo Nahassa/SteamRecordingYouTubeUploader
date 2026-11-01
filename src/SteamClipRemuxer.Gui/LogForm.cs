@@ -10,6 +10,7 @@ public sealed class LogForm : Form
     public LogForm()
     {
         Text = "Log";
+        Icon = AppIcon.Value ?? Icon;
         Size = new Size(760, 460);
         StartPosition = FormStartPosition.CenterParent;
 

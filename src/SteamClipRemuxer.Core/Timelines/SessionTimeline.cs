@@ -63,6 +63,49 @@ public sealed class SessionTimeline
 
     public string? ModeAt(TimeSpan moment) => TagAt(moment, "Mode");
 
+    /// <summary>
+    /// A tag describing a span: the one in force at its start, or else the first phase to begin
+    /// inside it.
+    ///
+    /// The fallback matters for a clip of a whole map. Such a clip starts in warmup, before
+    /// Steam opens the match's phase - on the Mirage sample the phase begins at 4:03 and the
+    /// warmup kill is at 3:44 - so asking only about the first moment found no map at all.
+    /// </summary>
+    public string? TagDuring(TimeSpan start, TimeSpan end, string group) =>
+        TagAt(start, group)
+        ?? Entries
+            .Where(e => e.Type == "phase" && e.Time > start && e.Time <= end && e.Tags.ContainsKey(group))
+            .Select(e => e.Tags[group])
+            .FirstOrDefault();
+
+    public string? MapDuring(TimeSpan start, TimeSpan end) => TagDuring(start, end, "Map");
+
+    public string? ModeDuring(TimeSpan start, TimeSpan end) => TagDuring(start, end, "Mode");
+
+    /// <summary>
+    /// Whether a moment falls inside a match, rather than in warmup or between matches.
+    ///
+    /// Steam opens a phase entry - tagged with the mode and map, with a duration - when a match
+    /// begins, and nothing for warmup. A timeline with no phases at all says nothing either way,
+    /// so every moment counts as in the match: a game that does not write phases must not lose
+    /// all of its kills. A phase with no duration is still running and is treated as open-ended.
+    /// </summary>
+    public bool InMatch(TimeSpan moment)
+    {
+        bool anyPhase = false;
+
+        foreach (TimelineEntry entry in Entries)
+        {
+            if (entry.Type != "phase") continue;
+            anyPhase = true;
+
+            if (moment < entry.Time) continue;
+            if (entry.Duration <= TimeSpan.Zero || moment <= entry.End) return true;
+        }
+
+        return !anyPhase;
+    }
+
     private const string RoundPrefix = "Start of round ";
 
     /// <summary>

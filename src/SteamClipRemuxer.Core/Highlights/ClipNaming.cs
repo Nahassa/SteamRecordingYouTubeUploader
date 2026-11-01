@@ -30,11 +30,19 @@ public static class ClipNaming
         "{game} - Compilation - {recording_date} {recording_time} ({count} clips)";
 
     /// <summary>
-    /// Default layout for a reel cut down to one clip's fights. Built from the clip's own name
-    /// rather than from {game} and a timestamp, so a reel sits next to the clip it came from
-    /// however the clip file name template has been changed.
+    /// Default layout for a reel cut down to one clip's fights.
+    ///
+    /// Named for the match rather than for one fight in it. The usual source is a clip of a whole
+    /// map, and the reel holds every fight in it, so "Quad kill" described one moment of the
+    /// reel and had to be renamed by hand every time. The time stays in the file name, unlike the
+    /// title: an output with the same name is overwritten, and two matches on one map in one
+    /// evening must not share a file.
     /// </summary>
-    public const string DefaultHighlightsTemplate = "{clip_name} - Highlights";
+    public const string DefaultHighlightsTemplate =
+        "{game} - {recording_date} {recording_time} - {map} - Highlights";
+
+    /// <summary>The previous default, kept so a saved copy of it can be moved forward.</summary>
+    public const string LegacyHighlightsTemplate = "{clip_name} - Highlights";
 
     public static string Expand(
         string template,
