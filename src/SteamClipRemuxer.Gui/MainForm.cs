@@ -255,6 +255,7 @@ public sealed class MainForm : Form
     private void BuildLayout()
     {
         Text = "Steam Clip Remuxer";
+        Icon = AppIcon.Value ?? Icon;
         // Wide enough for the widest bottom row (854px); see the budget where those rows are built.
         MinimumSize = new Size(900, 520);
         RestoreGeometry();

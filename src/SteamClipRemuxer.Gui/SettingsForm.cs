@@ -109,6 +109,7 @@ public sealed class SettingsForm : Form
         _settings = settings;
 
         Text = "Settings";
+        Icon = AppIcon.Value ?? Icon;
         // Tabs rather than one scrolling column: thirty-odd controls in a single run meant the
         // thing you wanted was usually off-screen, and a setting you cannot see is a setting you
         // do not know you have. Each tab fits without scrolling at this size.

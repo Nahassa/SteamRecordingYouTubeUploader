@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Steam Clip Remuxer app icon. Source for app.ico; regenerate the .ico from this file. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b3250"/>
+      <stop offset="1" stop-color="#0f1c2c"/>
+    </linearGradient>
+    <linearGradient id="heatU" gradientUnits="userSpaceOnUse" x1="67" y1="217" x2="225" y2="39">
+      <stop offset="0" stop-color="#2f8fd1"/>
+      <stop offset="0.55" stop-color="#8a5bb0"/>
+      <stop offset="1" stop-color="#e8452c"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#tile)"/>
+  <polygon points="80,52 80,204 212,128" fill="url(#heatU)" stroke="url(#heatU)" stroke-width="26" stroke-linejoin="round"/>
+  <g stroke="#f3f6fa" stroke-width="10" stroke-linecap="round">
+        <line x1="100.0" y1="169.4" x2="100.0" y2="117.4"/>
+        <line x1="100.0" y1="169.4" x2="162.4" y2="133.4"/>
+      </g>
+      <g transform="translate(100.0 117.4) rotate(0)">
+        <rect x="-13" y="-11" width="26" height="22" rx="6" fill="#f3f6fa"/>
+        <rect x="-13" y="-5" width="26" height="3.5" fill="url(#heatU)"/>
+      </g>
+      <g transform="translate(162.4 133.4) rotate(60)">
+        <rect x="-13" y="-11" width="26" height="22" rx="6" fill="#f3f6fa"/>
+        <rect x="-13" y="-5" width="26" height="3.5" fill="url(#heatU)"/>
+      </g>
+      <circle cx="100.0" cy="169.4" r="11" fill="#f3f6fa"/>
+</svg>

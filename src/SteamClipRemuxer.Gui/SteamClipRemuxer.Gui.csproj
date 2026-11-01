@@ -16,7 +16,17 @@
       usual reason a WinForms app looks dated before anyone reads a word of it.
     -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- The exe's own icon, shown by Explorer and pinned taskbar entries. -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <!--
+      The same file again as a resource, for the windows' title bars and the running taskbar
+      button. Read from the assembly rather than from the exe's Win32 icon, which is not
+      reliably reachable from inside a single-file publish.
+    -->
+    <EmbeddedResource Include="Assets/app.ico" LogicalName="app.ico" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SteamClipRemuxer.Core/SteamClipRemuxer.Core.csproj" />
   </ItemGroup>
