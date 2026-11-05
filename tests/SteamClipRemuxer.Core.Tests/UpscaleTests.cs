@@ -630,4 +630,27 @@ public class UpscaleTests
 
         return count;
     }
+
+    // ------------------------------------------------------------ frame count
+
+    [Fact]
+    public void Frames_are_counted_by_decoding_not_read_from_the_container()
+    {
+        // nb_frames is the container's sample count, and includes frames an edit list hides.
+        IReadOnlyList<string> args = ClipUpscaleService.BuildFrameCountArguments("in.mp4");
+
+        Assert.Contains("-count_frames", args);
+        Assert.Contains("stream=nb_read_frames", args);
+        Assert.DoesNotContain("stream=nb_frames", args);
+        Assert.Equal("in.mp4", args[^1]);
+    }
+
+    [Theory]
+    [InlineData("362\n", 362)]
+    [InlineData("2966,\r\n", 2966)]
+    [InlineData("N/A\n", null)]
+    [InlineData("", null)]
+    [InlineData("0\n", null)]
+    public void A_frame_count_is_read_only_when_ffprobe_printed_one(string output, int? expected) =>
+        Assert.Equal(expected, ClipUpscaleService.ParseFrameCount(output));
 }

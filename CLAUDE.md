@@ -24,7 +24,7 @@ The second command returning anything means the branch is behind. Rebase or star
 
 ```bash
 dotnet build                                   # all four projects, 0 warnings expected
-dotnet test tests/SteamClipRemuxer.Core.Tests  # 471 tests
+dotnet test tests/SteamClipRemuxer.Core.Tests  # 479 tests
 ```
 
 `TreatWarningsAsErrors` is on for Core. A warning is a build failure, not a suggestion.
@@ -57,6 +57,11 @@ Exit code 0 has never been evidence here.
 - The re-encode path cannot, so it checks duration, frame count, display aspect, colour range,
   primaries, transfer, space, bit depth, audio codec and channels, stream count, and an SSIM
   floor. The floor is calibrated against measurements, documented on `MinimumSsim`.
+- Count frames by decoding (`-count_frames`, `nb_read_frames`), never from `nb_frames`. A clip
+  cropped in Steam is trimmed with `-ss` and `-c copy`, which hides the pre-roll behind an edit
+  list: `nb_frames` still counts those frames and no decoder outputs them. That rejected every
+  upscale of a cropped clip, 2966 frames against 3039, while highlights (whole chunks, no edit
+  list) passed.
 - When FFmpeg warns that a result may be incorrect, treat the result as unmeasurable. Parsing
   past such a warning is what made two working encoders look broken.
 

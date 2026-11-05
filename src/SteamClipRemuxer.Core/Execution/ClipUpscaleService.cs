@@ -41,6 +41,7 @@ public sealed class ClipUpscaleService
     private readonly EncoderCapability _capability;
     private readonly IPipelineLog _log;
     private readonly string _ffmpegPath;
+    private readonly string _ffprobePath;
 
     /// <summary>How far the scaled duration may drift from the source's before it is a failure.</summary>
     public static readonly TimeSpan DurationTolerance = TimeSpan.FromSeconds(0.5);
@@ -76,13 +77,15 @@ public sealed class ClipUpscaleService
         IMediaProbe probe,
         EncoderCapability capability,
         IPipelineLog? log = null,
-        string ffmpegPath = "ffmpeg")
+        string ffmpegPath = "ffmpeg",
+        string ffprobePath = "ffprobe")
     {
         _runner = runner;
         _probe = probe;
         _capability = capability;
         _log = log ?? NullPipelineLog.Instance;
         _ffmpegPath = ffmpegPath;
+        _ffprobePath = ffprobePath;
     }
 
     // ---------------------------------------------------------------- colour
@@ -317,6 +320,63 @@ public sealed class ClipUpscaleService
             : null;
     }
 
+    // --------------------------------------------------------- frame counting
+
+    /// <summary>
+    /// Counts the frames a decoder actually produces, rather than the samples the container lists.
+    ///
+    /// The two differ whenever the file has an edit list. A clip cropped in Steam is trimmed with
+    /// -ss and -c copy, which has to start at the keyframe before the cut, and FFmpeg hides the
+    /// frames before the cut behind an edit list. nb_frames still counts them; every decoder,
+    /// the encoder's included, skips them. On a 4.2s trim of 3s GOPs that is 434 against 362,
+    /// and a real 63s clip was rejected for holding 2966 frames against 3039 when it held
+    /// exactly the frames a player shows.
+    /// </summary>
+    public static IReadOnlyList<string> BuildFrameCountArguments(string filePath) => new[]
+    {
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-count_frames",
+        "-show_entries", "stream=nb_read_frames",
+        "-of", "csv=p=0",
+        filePath,
+    };
+
+    /// <summary>The count ffprobe printed, or null when it printed anything else.</summary>
+    public static int? ParseFrameCount(string probeOutput)
+    {
+        string line = probeOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim().TrimEnd(','))
+            .FirstOrDefault(l => l.Length > 0) ?? string.Empty;
+
+        return int.TryParse(line, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0
+            ? n
+            : null;
+    }
+
+    /// <summary>
+    /// The file's properties with its frame count replaced by the decoded count. When counting
+    /// fails, the container's figure stays: the comparison then still runs, and a mismatch it
+    /// cannot explain still ends in uploading the original, which is the safe way to be wrong.
+    /// </summary>
+    private async Task<SourceMedia> WithDecodedFrameCountAsync(SourceMedia media, CancellationToken ct)
+    {
+        ProcessResult result = await _runner
+            .RunAsync(_ffprobePath, BuildFrameCountArguments(media.FilePath), ct)
+            .ConfigureAwait(false);
+
+        int? decoded = result.Succeeded ? ParseFrameCount(result.StandardOutput) : null;
+        if (decoded is null)
+        {
+            _log.Warning(
+                $"  could not count the decoded frames of {Path.GetFileName(media.FilePath)}; "
+                + "comparing the container's frame count instead.");
+            return media;
+        }
+
+        return media with { FrameCount = decoded };
+    }
+
     // ---------------------------------------------------------- verification
 
     /// <summary>
@@ -429,6 +489,9 @@ public sealed class ClipUpscaleService
 
             UpscaleEncoder encoder = await ResolveEncoderAsync(settings, ct).ConfigureAwait(false);
 
+            // Counted once, up front, so both attempts compare against the same figure.
+            source = await WithDecodedFrameCountAsync(source, ct).ConfigureAwait(false);
+
             UpscaleResult attempt = await AttemptAsync(
                     source, target, encoder, workspace, zscale, ct)
                 .ConfigureAwait(false);
@@ -500,7 +563,11 @@ public sealed class ClipUpscaleService
         if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             return UpscaleResult.Nothing("FFmpeg reported success but wrote no output");
 
-        SourceMedia scaled = await _probe.ProbeAsync(outputPath, ct).ConfigureAwait(false);
+        // Counted the same way as the source, so the comparison is like with like whether or not
+        // either file carries an edit list.
+        SourceMedia scaled = await WithDecodedFrameCountAsync(
+                await _probe.ProbeAsync(outputPath, ct).ConfigureAwait(false), ct)
+            .ConfigureAwait(false);
         double? ssim = await MeasureSsimAsync(
                 outputPath, source, target, zscaleAvailable, ct)
             .ConfigureAwait(false);
