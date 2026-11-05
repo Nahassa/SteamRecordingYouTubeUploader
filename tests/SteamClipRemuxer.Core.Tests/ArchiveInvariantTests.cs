@@ -71,6 +71,11 @@ public class ArchiveInvariantTests : IDisposable
         /// <summary>Set to fail every encode, as a machine without a working encoder would.</summary>
         public bool EncodeFails { get; set; }
 
+        /// <summary>What a decode-and-count reports, for the source and the scaled copy alike.</summary>
+        public int DecodedFrames { get; set; } = 446;
+
+        public bool CountFails { get; set; }
+
         public Task<ProcessResult> RunAsync(
             string fileName, IReadOnlyList<string> arguments, CancellationToken ct = default)
         {
@@ -79,6 +84,15 @@ public class ArchiveInvariantTests : IDisposable
 
             if (args.Contains("-version"))
                 return Ok("ffmpeg version 6.1.1-test");
+
+            // ffprobe decoding the video to count its frames. Answered before the copy branch
+            // below, which would otherwise write over the file being counted.
+            if (args.Contains("-count_frames"))
+            {
+                return CountFails
+                    ? Task.FromResult(new ProcessResult(1, "", "decode failed\n"))
+                    : Ok($"{DecodedFrames}\n");
+            }
 
             // The similarity pass. Reports on stderr, as the ssim filter does.
             if (args.Contains("-lavfi"))
@@ -138,7 +152,9 @@ public class ArchiveInvariantTests : IDisposable
             ColorSpace = "bt709",
             ColorPrimaries = "bt709",
             ColorTransfer = "bt709",
-            FrameCount = 446,
+            // The container's count, which includes the pre-roll a -ss copy hides behind an edit
+            // list: this fixture is a cropped clip. 446 frames are what a decoder produces.
+            FrameCount = 519,
             DurationSeconds = 7.435,
             AudioCodec = "aac",
             AudioChannels = 2,
@@ -155,6 +171,7 @@ public class ArchiveInvariantTests : IDisposable
             Height = 1080,
             SampleAspect = AspectRatio.Square,
             PixelFormat = "yuv420p10le",
+            FrameCount = 446,
         };
     }
 
@@ -297,6 +314,28 @@ public class ArchiveInvariantTests : IDisposable
     {
         (_, Uploader uploader) = await RunAsync(
             YouTubeUpscale.To1080p, arrange: f => f.EncodeFails = true);
+
+        Assert.Equal(Lossless, uploader.UploadedBytes);
+        Assert.Equal(Lossless, File.ReadAllBytes(Assert.Single(Archived())));
+    }
+
+    [Fact]
+    public async Task A_cropped_clip_is_scaled_although_its_container_lists_hidden_frames()
+    {
+        // The regression: the container said 519, the scaled copy held the 446 a player shows,
+        // and the copy was thrown away for it. Decoded counts agree, so it is uploaded.
+        (Ffmpeg ffmpeg, Uploader uploader) = await RunAsync(YouTubeUpscale.To1080p);
+
+        Assert.Equal(Scaled, uploader.UploadedBytes);
+        Assert.Contains(ffmpeg.Calls, c => c.Contains("-count_frames"));
+    }
+
+    [Fact]
+    public async Task When_frames_cannot_be_counted_a_mismatch_still_uploads_the_original()
+    {
+        // Falls back to the container's counts, which disagree here, and so to the safe outcome.
+        (_, Uploader uploader) = await RunAsync(
+            YouTubeUpscale.To1080p, arrange: f => f.CountFails = true);
 
         Assert.Equal(Lossless, uploader.UploadedBytes);
         Assert.Equal(Lossless, File.ReadAllBytes(Assert.Single(Archived())));
