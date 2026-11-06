@@ -77,6 +77,38 @@ public sealed record ClipListing
 /// </summary>
 public sealed class ClipBatchService
 {
+    /// <summary>
+    /// The file name a reel cut from this one clip is given: the user's own name for the clip, or
+    /// the highlights template. The one definition both the run and the clip list use, so the
+    /// list cannot show a name the reel will not get.
+    /// </summary>
+    /// <param name="fights">Fights kept, which only the cut knows; null leaves {fights} empty.</param>
+    public static string HighlightsNameFor(ClipListing listing, AppSettings settings, int? fights = null) =>
+        listing.CustomName ?? ClipNaming.Expand(
+            settings.HighlightsFileNameTemplate,
+            listing.GameName, listing.RecordedAt, listing.Highlight,
+            count: 1, clipName: listing.SuggestedName, fights: fights);
+
+    /// <summary>
+    /// The YouTube title a reel cut from this one clip is given, for a reel written to
+    /// <paramref name="outputPath"/>. Shares its rules with <see cref="PublishAsync"/>.
+    /// </summary>
+    public static string HighlightsTitleFor(
+        ClipListing listing, AppSettings settings, string outputPath, int? fights = null) =>
+        listing.CustomName ?? TitleTemplate.Expand(
+            settings.YouTubeHighlightsTitleTemplate, outputPath,
+            settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
+            highlight: listing.Highlight, recordedAt: listing.RecordedAt,
+            game: listing.GameName, count: 1, fights: fights);
+
+    /// <summary>The YouTube title a whole clip is given when it is remuxed to <paramref name="outputPath"/>.</summary>
+    public static string ClipTitleFor(ClipListing listing, AppSettings settings, string outputPath) =>
+        listing.CustomName ?? TitleTemplate.Expand(
+            settings.YouTubeClipTitleTemplate, outputPath,
+            settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
+            highlight: listing.Highlight, recordedAt: listing.RecordedAt,
+            game: listing.GameName);
+
     private readonly ClipRemuxService _remux;
     private readonly ClipStitchService _stitch;
     private readonly ClipHighlightService _highlights;
@@ -302,11 +334,7 @@ public sealed class ClipBatchService
             _log.Success($"  {Path.GetFileName(remux.OutputPath)}"
                 + (remux.AspectOverridden ? " (stretched, video copied)" : " (video copied)"));
 
-            string title = listing.CustomName ?? TitleTemplate.Expand(
-                settings.YouTubeClipTitleTemplate, remux.OutputPath,
-                settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
-                highlight: listing.Highlight, recordedAt: listing.RecordedAt,
-                game: listing.GameName);
+            string title = ClipTitleFor(listing, settings, remux.OutputPath);
 
             processed.MarkRemuxed(
                 manifest.Id, listing.Clip.FolderName, title, remux.OutputPath, listing.RecordedAt);
@@ -575,7 +603,8 @@ public sealed class ClipBatchService
         ProcessedClipLog processed,
         IYouTubeUploader? youtube,
         bool cutToHighlights,
-        CancellationToken ct)
+        CancellationToken ct,
+        int? fights = null)
     {
         ClipListing first = included[0];
 
@@ -591,7 +620,7 @@ public sealed class ClipBatchService
             settings.YouTubeTitleTimestamp, settings.YouTubeRemoveTextPatterns,
             highlight: included.Count == 1 ? first.Highlight : null,
             recordedAt: first.RecordedAt, game: first.GameName,
-            count: included.Count, fights: stitched.Parts.Count);
+            count: included.Count, fights: fights ?? stitched.Parts.Count);
 
         foreach (ClipListing listing in included)
         {
@@ -827,7 +856,10 @@ public sealed class ClipBatchService
                 return new[] { new ClipOutcome { InputPath = ordered[0].Clip.Path, Error = message } };
             }
 
-            if (joinAcrossClips)
+            // Joining needs two clips that kept something. With one, the result is that clip's own
+            // reel, and it is named and titled as one: the compilation templates would call it a
+            // "1 clip compilation", the mistake the highlights templates exist to avoid.
+            if (joinAcrossClips && cuts.Count > 1)
             {
                 ClipListing first = cuts[0].Listing;
                 return new[] { await AssembleReelAsync(
@@ -849,10 +881,7 @@ public sealed class ClipBatchService
             {
                 outcomes.Add(await AssembleReelAsync(
                         parts, new[] { listing },
-                        kept => listing.CustomName ?? ClipNaming.Expand(
-                            settings.HighlightsFileNameTemplate,
-                            listing.GameName, listing.RecordedAt, listing.Highlight,
-                            count: 1, clipName: listing.SuggestedName, fights: kept),
+                        kept => HighlightsNameFor(listing, settings, kept),
                         settings.YouTubeHighlightsTitleTemplate,
                         settings, processed, uploading ? youtube : null, options, ct)
                     .ConfigureAwait(false));
@@ -906,7 +935,9 @@ public sealed class ClipBatchService
 
             return await PublishAsync(
                     reel, included, titleTemplate, settings, processed, youtube,
-                    cutToHighlights: true, ct)
+                    cutToHighlights: true, ct,
+                    // An intro or outro is a part of the reel but not a fight.
+                    fights: parts.Count(p => p.IsFight))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
