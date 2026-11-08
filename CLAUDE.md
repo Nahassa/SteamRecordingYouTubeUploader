@@ -24,7 +24,7 @@ The second command returning anything means the branch is behind. Rebase or star
 
 ```bash
 dotnet build                                   # all four projects, 0 warnings expected
-dotnet test tests/SteamClipRemuxer.Core.Tests  # 479 tests
+dotnet test tests/SteamClipRemuxer.Core.Tests  # 484 tests
 ```
 
 `TreatWarningsAsErrors` is on for Core. A warning is a build failure, not a suggestion.

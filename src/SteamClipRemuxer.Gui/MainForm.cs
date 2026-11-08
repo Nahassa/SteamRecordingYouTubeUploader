@@ -178,7 +178,8 @@ public sealed class MainForm : Form
     private readonly DateTimeOffset? _previousSessionEnd;
 
     private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Black };
-    private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 68, Padding = new Padding(6) };
+    // Tall enough for six lines: geometry, fight, tagging, file name and YouTube title.
+    private readonly Label _clipInfo = new() { Dock = DockStyle.Bottom, Height = 100, Padding = new Padding(6) };
 
     private readonly Button _remux = new() { Text = "Remux Selected", Width = 140, Height = 30 };
     private readonly Button _cancel = new() { Text = "Cancel", Width = 90, Height = 30, Enabled = false };
@@ -395,7 +396,11 @@ public sealed class MainForm : Form
         _remux.Click += async (_, _) => await RunBatchAsync().ConfigureAwait(true);
 
         _stitch.CheckedChanged += (_, _) => UpdateModeControls();
-        _highlights.CheckedChanged += (_, _) => UpdateModeControls();
+        _highlights.CheckedChanged += (_, _) =>
+        {
+            UpdateModeControls();
+            RefreshNames();
+        };
         _cancel.Click += (_, _) => _cancellation?.Cancel();
         _selectAll.Click += (_, _) => ToggleAll();
         _invert.Click += (_, _) => InvertSelection();
@@ -808,9 +813,37 @@ public sealed class MainForm : Form
 
     private static string Tick(bool done) => done ? "\u2713" : string.Empty;
 
-    /// <summary>What the first column shows: the name the output will be given.</summary>
-    private static string NameOf(ClipEntry entry) =>
-        entry.Listing?.SuggestedName ?? System.IO.Path.GetFileName(entry.Path);
+    /// <summary>
+    /// What the first column shows: the name the output will be given.
+    ///
+    /// With "Kill highlights only" on, that is the reel's name, not the clip's. Showing the clip's
+    /// name there made every reel look misnamed, and renaming the row to correct it set a custom
+    /// name that then overrode the highlights templates for good.
+    /// </summary>
+    private string NameOf(ClipEntry entry) => entry.Listing switch
+    {
+        null => System.IO.Path.GetFileName(entry.Path),
+        { } listing when CuttingHighlights => ClipBatchService.HighlightsNameFor(listing, _settings),
+        { } listing => listing.SuggestedName,
+    };
+
+    /// <summary>Whether the next run cuts highlights rather than remuxing whole clips.</summary>
+    private bool CuttingHighlights =>
+        _settings.ClipSource == ClipSource.SteamClips && _highlights.Checked;
+
+    /// <summary>
+    /// Re-labels the rows on show after the mode changed, without rereading anything. The ticks
+    /// are left exactly as they are.
+    /// </summary>
+    private void RefreshNames()
+    {
+        foreach (ListViewItem row in _clips.Items)
+        {
+            if (row.Tag is ClipEntry entry) row.Text = NameOf(entry);
+        }
+
+        _ = ShowPreviewAsync();
+    }
 
     private void BeginRename() =>
         (_clips.SelectedItems.Count > 0 ? _clips.SelectedItems[0] : null)?.BeginEdit();
@@ -1007,7 +1040,19 @@ public sealed class MainForm : Form
         }
 
         lines.Add($"Will be tagged {target}. Video copied, not re-encoded.");
-        lines.Add($"-> {listing.SuggestedName}.mp4");
+        // The names the run will use, from the same methods the run calls.
+        string name = CuttingHighlights
+            ? ClipBatchService.HighlightsNameFor(listing, _settings)
+            : listing.SuggestedName;
+        lines.Add($"-> {name}.mp4");
+
+        if (_settings.EnableYouTubeUpload)
+        {
+            string title = CuttingHighlights
+                ? ClipBatchService.HighlightsTitleFor(listing, _settings, name + ".mp4")
+                : ClipBatchService.ClipTitleFor(listing, _settings, name + ".mp4");
+            lines.Add($"YouTube: {title}");
+        }
 
         _clipInfo.Text = string.Join(Environment.NewLine, lines);
 

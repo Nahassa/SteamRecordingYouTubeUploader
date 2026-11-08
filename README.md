@@ -206,6 +206,12 @@ A highlights reel is named for its match, because the usual source is a clip of 
 | title | `{game} - {recording_date} - {map} highlights` → *CS2 - 2026-09-19 - Inferno highlights* |
 | file | `{game} - {recording_date} {recording_time} - {map} - Highlights` |
 
+With **Kill highlights only** ticked, the list and the preview show the reel's file name and
+YouTube title, from the same code the run uses, so what you see is what you get. Renaming a row sets
+a custom name, which beats every template for both the file and the title; right-click → Reset Name
+puts the template back. "Stitch into one video" with only one clip that kept fights is named as that
+clip's reel, not as a one-clip compilation.
+
 The file name keeps the time because an output with the same name is overwritten. These replaced
 `{game} - {highlight_full}` and `{clip_name} - Highlights`, which named the reel's single best fight
 ("Quad kill") and had to be renamed by hand on every upload. A settings file still holding either
